@@ -1,48 +1,6 @@
 import type { Timestamp } from 'firebase/firestore';
 import type { FormSubmission, Post } from '../types';
 
-export const STUDIO_PRESET_IMAGES = [
-  {
-    label: 'Tidal Rave Ghana',
-    url: '/assets/aistudio/99bc11007403730_f92625d8.jpg',
-  },
-  {
-    label: 'Obala Coffee & PayFlow',
-    url: '/src/assets/images/african_company_promo_1794859060543.jpg',
-  },
-  {
-    label: 'Acoustic Music Evening',
-    url: '/src/assets/images/showcase_music_festival_1794838619312.jpg',
-  },
-  {
-    label: 'Artisanal Textile Showcase',
-    url: '/src/assets/images/showcase_fashion_promo_1794838620670.jpg',
-  },
-  {
-    label: 'Nairobi Founders Table',
-    url: '/src/assets/images/showcase_tech_summit_1794838620227.jpg',
-  },
-  {
-    label: 'Africa Tech Festival',
-    url: '/assets/aistudio/99bc11007403730_dbb0dfe7.jpg',
-  },
-];
-
-export const STUDIO_PRESET_VIDEOS = [
-  {
-    label: 'Tidal Rave Ghana Reel',
-    url: '/assets/videos/tidal_rave_aftermovie.mp4',
-  },
-  {
-    label: 'African Brand Promos Reel',
-    url: '/assets/videos/africa_brand_promos.mp4',
-  },
-  {
-    label: 'Africa Tech Highlights',
-    url: '/assets/videos/africa_tech_highlights.mp4',
-  },
-];
-
 export function generateSafeId(prefix = 'ms'): string {
   const randomPart =
     typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'

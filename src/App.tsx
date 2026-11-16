@@ -1,12 +1,60 @@
-import { Component, useEffect, useState, type ReactNode } from 'react';
-import { DashboardView } from './components/DashboardView';
+import { Timestamp } from 'firebase/firestore';
+import { Component, lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { DiscoverFeed } from './components/DiscoverFeed';
-import { FormFillModal } from './components/FormFillModal';
-import { PostComposerModal } from './components/PostComposerModal';
 import { TopBar, type NavSection } from './components/TopBar';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { subscribePublicPosts } from './services/firestoreService';
 import type { Post, PostCategory } from './types';
+
+const DashboardView = lazy(() =>
+  import('./components/DashboardView').then((m) => ({ default: m.DashboardView }))
+);
+const PostComposerModal = lazy(() =>
+  import('./components/PostComposerModal').then((m) => ({ default: m.PostComposerModal }))
+);
+const FormFillModal = lazy(() =>
+  import('./components/FormFillModal').then((m) => ({ default: m.FormFillModal }))
+);
+
+const FEED_CACHE_KEY = 'moodspace_public_feed_cache_v2';
+
+interface CachedPost extends Omit<Post, 'createdAt' | 'updatedAt'> {
+  createdAtSec: number | null;
+  updatedAtSec: number | null;
+}
+
+function readCachedFeed(): Post[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(FEED_CACHE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as CachedPost[];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((item) => ({
+      ...item,
+      createdAt: item.createdAtSec ? new Timestamp(item.createdAtSec, 0) : null,
+      updatedAt: item.updatedAtSec ? new Timestamp(item.updatedAtSec, 0) : null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function writeCachedFeed(posts: Post[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    const slim: CachedPost[] = posts.slice(0, 15).map((p) => ({
+      ...p,
+      authorAvatar: p.authorAvatar.startsWith('data:') ? '' : p.authorAvatar,
+      photoUrl: p.photoUrl.startsWith('data:') && p.photoUrl.length > 60000 ? '' : p.photoUrl,
+      createdAtSec: p.createdAt ? p.createdAt.seconds : null,
+      updatedAtSec: p.updatedAt ? p.updatedAt.seconds : null,
+    }));
+    window.localStorage.setItem(FEED_CACHE_KEY, JSON.stringify(slim));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
 
 class AppErrorBoundary extends Component<
   { children: ReactNode },
@@ -50,8 +98,8 @@ class AppErrorBoundary extends Component<
 function MoodSpaceShell() {
   const { user, signInWithGoogle, authError } = useAuth();
   const [activeSection, setActiveSection] = useState<NavSection>('discover');
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [feedLoading, setFeedLoading] = useState(true);
+  const [posts, setPosts] = useState<Post[]>(() => readCachedFeed());
+  const [feedLoading, setFeedLoading] = useState(() => posts.length === 0);
   const [composerOpen, setComposerOpen] = useState(false);
   const [editingPost, setEditingPost] = useState<Post | null>(null);
   const [formPost, setFormPost] = useState<Post | null>(null);
@@ -67,10 +115,10 @@ function MoodSpaceShell() {
   }, []);
 
   useEffect(() => {
-    setFeedLoading(true);
     const unsub = subscribePublicPosts(
       (list) => {
         setPosts(list);
+        writeCachedFeed(list);
         setFeedLoading(false);
       },
       () => {
@@ -137,11 +185,19 @@ function MoodSpaceShell() {
 
       <div className="flex-1">
         {activeSection === 'dashboard' ? (
-          <DashboardView
-            onCreatePost={() => void handleOpenCreate()}
-            onEditPost={handleEditPost}
-            onNotify={showToast}
-          />
+          <Suspense
+            fallback={
+              <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12 text-sm text-[#5E5D59]">
+                Loading dashboard...
+              </div>
+            }
+          >
+            <DashboardView
+              onCreatePost={() => void handleOpenCreate()}
+              onEditPost={handleEditPost}
+              onNotify={showToast}
+            />
+          </Suspense>
         ) : (
           <DiscoverFeed
             posts={posts}
@@ -164,21 +220,29 @@ function MoodSpaceShell() {
         </div>
       </footer>
 
-      <PostComposerModal
-        isOpen={composerOpen}
-        editingPost={editingPost}
-        onClose={() => {
-          setComposerOpen(false);
-          setEditingPost(null);
-        }}
-        onSaved={showToast}
-      />
+      {composerOpen && (
+        <Suspense fallback={null}>
+          <PostComposerModal
+            isOpen={composerOpen}
+            editingPost={editingPost}
+            onClose={() => {
+              setComposerOpen(false);
+              setEditingPost(null);
+            }}
+            onSaved={showToast}
+          />
+        </Suspense>
+      )}
 
-      <FormFillModal
-        post={formPost}
-        onClose={() => setFormPost(null)}
-        onSubmitted={showToast}
-      />
+      {formPost && (
+        <Suspense fallback={null}>
+          <FormFillModal
+            post={formPost}
+            onClose={() => setFormPost(null)}
+            onSubmitted={showToast}
+          />
+        </Suspense>
+      )}
 
       {toast && (
         <div

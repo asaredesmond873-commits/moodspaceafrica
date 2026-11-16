@@ -13,7 +13,7 @@ import {
   type ReactNode,
 } from 'react';
 import { auth, googleProvider } from '../firebase';
-import { ensureUserProfile, syncFeedToOnlyTidalRave } from '../services/firestoreService';
+import { cleanupAccidentalAutoSeededPosts, ensureUserProfile } from '../services/firestoreService';
 import type { PublicProfile } from '../types';
 
 interface AuthContextValue {
@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const loaded = await ensureUserProfile(nextUser);
           setProfile(loaded);
           setAuthError(null);
-          void syncFeedToOnlyTidalRave(loaded).catch(() => {});
+          void cleanupAccidentalAutoSeededPosts(loaded.uid).catch(() => {});
         } catch (err) {
           setAuthError(err instanceof Error ? err.message : 'Unable to load your profile.');
         }
@@ -64,7 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const cred = await signInWithPopup(auth, googleProvider);
       const loaded = await ensureUserProfile(cred.user);
       setProfile(loaded);
-      void syncFeedToOnlyTidalRave(loaded).catch(() => {});
+      void cleanupAccidentalAutoSeededPosts(loaded.uid).catch(() => {});
       return loaded;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Sign-in was cancelled or failed.';

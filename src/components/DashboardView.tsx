@@ -74,7 +74,7 @@ export function DashboardView({
   // Profile form state
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
-  const [location, setLocation] = useState('Lagos, Nigeria');
+  const [location, setLocation] = useState('Accra, Ghana');
   const [accountType, setAccountType] = useState<AccountType>('creator');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
@@ -84,7 +84,7 @@ export function DashboardView({
     if (!profile) return;
     setDisplayName(profile.displayName);
     setBio(profile.bio);
-    setLocation(profile.location || 'Lagos, Nigeria');
+    setLocation(profile.location || 'Accra, Ghana');
     setAccountType(profile.accountType);
     setAvatarUrl(profile.avatarUrl);
   }, [profile]);
@@ -633,11 +633,14 @@ export function DashboardView({
                                   </div>
                                   <button
                                     type="button"
-                                    onClick={() =>
-                                      void deletePostComment(moderatedPost, cmt.id).then(() =>
-                                        onNotify('Comment removed')
-                                      )
-                                    }
+                                    onClick={async () => {
+                                      try {
+                                        await deletePostComment(moderatedPost, cmt.id);
+                                        onNotify('Comment removed');
+                                      } catch {
+                                        onNotify('Unable to remove comment.');
+                                      }
+                                    }}
                                     className="text-xs font-semibold text-[#B91C1C] hover:underline shrink-0 cursor-pointer"
                                   >
                                     Remove
@@ -850,20 +853,51 @@ export function DashboardView({
 
                   <div>
                     <label className="block text-xs font-semibold text-[#5E5D59] mb-1">
-                      City &amp; Country
+                      Location (Ghana First)
                     </label>
-                    <input
-                      list="african-cities"
-                      maxLength={SCHEMA_LIMITS.LOCATION_MAX}
-                      value={location}
-                      onChange={(e) => setLocation(e.target.value)}
-                      className="w-full px-3.5 py-2 text-sm border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
-                    />
-                    <datalist id="african-cities">
-                      {AFRICAN_CITIES.map((city) => (
-                        <option key={city} value={city} />
-                      ))}
-                    </datalist>
+                    <select
+                      aria-label="Select city and country"
+                      value={
+                        (AFRICAN_CITIES as readonly string[]).includes(location)
+                          ? location
+                          : '__custom__'
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '__custom__') {
+                          setLocation('');
+                        } else {
+                          setLocation(val);
+                        }
+                      }}
+                      className="w-full px-3.5 py-2 text-sm bg-white border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
+                    >
+                      <optgroup label="Ghana">
+                        {AFRICAN_CITIES.filter((c) => c.endsWith('Ghana')).map((city) => (
+                          <option key={city} value={city}>
+                            {city}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="Other African Countries">
+                        {AFRICAN_CITIES.filter((c) => !c.endsWith('Ghana')).map((city) => (
+                          <option key={city} value={city}>
+                            {city}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <option value="__custom__">Other city / custom location...</option>
+                    </select>
+                    {!(AFRICAN_CITIES as readonly string[]).includes(location) && (
+                      <input
+                        type="text"
+                        maxLength={SCHEMA_LIMITS.LOCATION_MAX}
+                        value={location}
+                        onChange={(e) => setLocation(e.target.value)}
+                        placeholder="e.g. East Legon, Accra, Ghana"
+                        className="mt-2 w-full px-3.5 py-2 text-sm border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
+                      />
+                    )}
                   </div>
                 </div>
 
@@ -879,7 +913,7 @@ export function DashboardView({
                     maxLength={SCHEMA_LIMITS.BIO_MAX}
                     value={bio}
                     onChange={(e) => setBio(e.target.value)}
-                    placeholder="Tell people what you create, host, or offer across Africa..."
+                    placeholder="Tell people what you create, host, or offer in Ghana and across Africa..."
                     className="w-full px-3.5 py-2 text-sm border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
                   />
                 </div>

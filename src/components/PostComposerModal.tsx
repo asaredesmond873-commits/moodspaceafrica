@@ -10,7 +10,7 @@ import {
   type PostVisibility,
   SCHEMA_LIMITS,
 } from '../types';
-import { compressImageFile, STUDIO_PRESET_IMAGES, STUDIO_PRESET_VIDEOS } from '../utils/media';
+import { compressImageFile } from '../utils/media';
 import { FormBuilder } from './FormBuilder';
 
 interface PostComposerModalProps {
@@ -133,6 +133,14 @@ export function PostComposerModal({
       }
       if (formConfig.fields.some((f) => !f.label.trim())) {
         setErrorMsg('Please enter a question for every row in your custom form.');
+        return;
+      }
+      if (
+        formConfig.fields.some(
+          (f) => f.type === 'select' && f.options.map((o) => o.trim()).filter(Boolean).length === 0
+        )
+      ) {
+        setErrorMsg('Please add at least one choice for every dropdown question.');
         return;
       }
     }
@@ -279,7 +287,7 @@ export function PostComposerModal({
               maxLength={SCHEMA_LIMITS.TITLE_MAX}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Lagos Design Pop-Up & Maker Showcase"
+              placeholder="e.g. Osu Night Market & Accra Makers Pop-Up"
               className="w-full px-3.5 py-2.5 text-sm border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
             />
           </div>
@@ -297,7 +305,7 @@ export function PostComposerModal({
               maxLength={SCHEMA_LIMITS.CONTENT_MAX}
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="Share what is happening, who it is for, and how the community can join..."
+              placeholder="Share what is happening in Ghana or across Africa, and how people can join..."
               className="w-full px-3.5 py-2.5 text-sm border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
             />
           </div>
@@ -314,7 +322,7 @@ export function PostComposerModal({
                   maxLength={SCHEMA_LIMITS.EVENT_DATE_MAX}
                   value={eventDate}
                   onChange={(e) => setEventDate(e.target.value)}
-                  placeholder="e.g. Sat 14 Dec · 17:00 WAT"
+                  placeholder="e.g. Sat 28 Nov · 16:00 GMT"
                   className="w-full px-3 py-2 text-sm border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
                 />
               </div>
@@ -327,7 +335,7 @@ export function PostComposerModal({
                   maxLength={SCHEMA_LIMITS.EVENT_LOCATION_MAX}
                   value={eventLocation}
                   onChange={(e) => setEventLocation(e.target.value)}
-                  placeholder="e.g. Victoria Island, Lagos"
+                  placeholder="e.g. Osu, Accra or Kumasi City Mall"
                   className="w-full px-3 py-2 text-sm border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
                 />
               </div>
@@ -344,7 +352,7 @@ export function PostComposerModal({
                 maxLength={SCHEMA_LIMITS.PROMO_CODE_MAX}
                 value={promoCode}
                 onChange={(e) => setPromoCode(e.target.value)}
-                placeholder="e.g. AFRICACREATES20"
+                placeholder="e.g. ACCRAVIP20"
                 className="w-full px-3 py-2 text-sm font-mono border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
               />
             </div>
@@ -372,34 +380,9 @@ export function PostComposerModal({
                 maxLength={SCHEMA_LIMITS.PHOTO_URL_MAX}
                 value={photoUrl.startsWith('data:') ? '' : photoUrl}
                 onChange={(e) => setPhotoUrl(e.target.value)}
-                placeholder="Paste an image URL or upload / select a studio image below..."
+                placeholder="Paste an image URL (https://...) or upload a photo above"
                 className="w-full px-3 py-2 text-sm bg-white border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
               />
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {STUDIO_PRESET_IMAGES.map((preset) => (
-                  <button
-                    key={preset.url}
-                    type="button"
-                    onClick={() => setPhotoUrl(preset.url)}
-                    className={`group relative overflow-hidden rounded-lg border text-left cursor-pointer ${
-                      photoUrl === preset.url
-                        ? 'border-[#0E7C5B] ring-2 ring-[#0E7C5B]/30'
-                        : 'border-[#E7E5E0]'
-                    }`}
-                  >
-                    <img
-                      src={preset.url}
-                      alt={preset.label}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-16 object-cover"
-                    />
-                    <span className="block px-1.5 py-1 text-[10px] font-medium text-[#141413] bg-white truncate">
-                      {preset.label}
-                    </span>
-                  </button>
-                ))}
-              </div>
 
               {photoUrl && (
                 <div className="relative rounded-lg overflow-hidden border border-[#E7E5E0] bg-white">
@@ -423,35 +406,18 @@ export function PostComposerModal({
 
           {/* Video Input */}
           {showVideoField && (
-            <div className="p-4 border border-[#E7E5E0] rounded-xl bg-[#FAF9F7] space-y-3">
+            <div className="p-4 border border-[#E7E5E0] rounded-xl bg-[#FAF9F7] space-y-2">
               <label className="block text-xs font-semibold text-[#141413]">
-                Video URL (YouTube, Vimeo, direct MP4/WebM, or reel preset)
+                Video URL (YouTube, Vimeo, or direct MP4/WebM)
               </label>
               <input
                 type="text"
                 maxLength={SCHEMA_LIMITS.VIDEO_URL_MAX}
                 value={videoUrl}
                 onChange={(e) => setVideoUrl(e.target.value)}
-                placeholder="https://www.youtube.com/watch?v=... or /assets/videos/tidal_rave_aftermovie.mp4"
+                placeholder="https://www.youtube.com/watch?v=... or https://.../video.mp4"
                 className="w-full px-3 py-2 text-sm bg-white border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
               />
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[11px] font-medium text-[#5E5D59]">Quick reels:</span>
-                {STUDIO_PRESET_VIDEOS.map((vid) => (
-                  <button
-                    key={vid.url}
-                    type="button"
-                    onClick={() => setVideoUrl(vid.url)}
-                    className={`px-2.5 py-1 text-[11px] font-medium rounded-md border cursor-pointer ${
-                      videoUrl === vid.url
-                        ? 'border-[#0E7C5B] bg-[#0E7C5B] text-white'
-                        : 'border-[#D4D1CA] bg-white text-[#141413] hover:border-[#0E7C5B]'
-                    }`}
-                  >
-                    {vid.label}
-                  </button>
-                ))}
-              </div>
             </div>
           )}
 

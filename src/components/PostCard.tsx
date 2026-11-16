@@ -290,6 +290,7 @@ export function PostCard({
               src={post.photoUrl}
               alt={post.title}
               referrerPolicy="no-referrer"
+              decoding="async"
               onError={() => setImgError(true)}
               className="w-full max-h-[560px] object-contain"
             />

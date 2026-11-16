@@ -99,9 +99,14 @@ export const SCHEMA_LIMITS = {
 } as const;
 
 export const AFRICAN_CITIES = [
+  'Accra, Ghana',
+  'Kumasi, Ghana',
+  'Takoradi, Ghana',
+  'Tamale, Ghana',
+  'Cape Coast, Ghana',
+  'Tema, Ghana',
   'Lagos, Nigeria',
   'Nairobi, Kenya',
-  'Accra, Ghana',
   'Johannesburg, South Africa',
   'Cape Town, South Africa',
   'Kigali, Rwanda',
@@ -110,8 +115,8 @@ export const AFRICAN_CITIES = [
   'Dakar, Senegal',
   'Kampala, Uganda',
   'Dar es Salaam, Tanzania',
-  'Casablanca, Morocco',
   'Abidjan, Côte d’Ivoire',
+  'Casablanca, Morocco',
   'Lusaka, Zambia',
   'Harare, Zimbabwe',
 ] as const;

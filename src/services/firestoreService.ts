@@ -5,7 +5,6 @@ import {
   doc,
   getDoc,
   getDocs,
-  limit,
   onSnapshot,
   orderBy,
   query,
@@ -80,7 +79,7 @@ export async function ensureUserProfile(user: User): Promise<PublicProfile> {
       uid: user.uid,
       displayName: clampString(user.displayName || 'MoodSpace Member', SCHEMA_LIMITS.DISPLAY_NAME_MAX),
       bio: '',
-      location: 'Lagos, Nigeria',
+      location: 'Accra, Ghana',
       accountType: 'creator' as AccountType,
       avatarUrl: clampString(user.photoURL || '', SCHEMA_LIMITS.AVATAR_URL_MAX),
       isPublic: true,
@@ -132,6 +131,7 @@ export function subscribePublicPosts(
     (snapshot) => {
       const posts = snapshot.docs
         .map((d) => d.data() as Post)
+        .filter((post) => !isAccidentalAutoSeededPost(post))
         .sort((a, b) => (b.createdAt?.toMillis() ?? Date.now()) - (a.createdAt?.toMillis() ?? Date.now()));
       onData(posts);
     },
@@ -517,6 +517,28 @@ export interface FeaturedPostTemplate {
 
 export const TIDAL_RAVE_POSTER_PATH = '/assets/aistudio/99bc11007403730_f92625d8.jpg';
 export const TIDAL_RAVE_GENUINE_TITLE = 'Tidal Rave Ghana 2026 — Rave Takeover by Davido';
+const TIDAL_RAVE_GENUINE_CONTENT =
+  "Africa's Biggest Beach Festival returns to La Palm Royal Beach Hotel for the Rave Takeover by Davido! #NoRaverLeftBehind\n\nGet your tickets now: dial *714*20# or visit www.tidalravefestival.com for more info.\n\nPowered by São.";
+
+const OLD_AUTO_SEEDED_TITLES = new Set([
+  'Tidal Rave Festival Ghana — La Palm Beach Reel & VIP Wave Pass',
+  'Africa Tech Festival — Building Africa’s Digital Future & Next Gen Talent',
+  '30% Tap-to-Pay Cashback Week — Local Roasters & SME Merchant Promo',
+  '25% Launch Offer — Handwoven Indigo & Raw Linen Capsule',
+  'Osu Courtyard Acoustic & Local Artisans Evening',
+  'East Africa SME Zero-Fee Logistics & Founders Fellowship Open',
+]);
+
+function isAccidentalAutoSeededPost(post: Post): boolean {
+  if (OLD_AUTO_SEEDED_TITLES.has(post.title)) return true;
+  if (
+    post.title === TIDAL_RAVE_GENUINE_TITLE &&
+    post.content === TIDAL_RAVE_GENUINE_CONTENT
+  ) {
+    return true;
+  }
+  return false;
+}
 
 export const FEATURED_AFRICAN_FEED: FeaturedPostTemplate[] = [
   {
@@ -525,8 +547,7 @@ export const FEATURED_AFRICAN_FEED: FeaturedPostTemplate[] = [
     brandLabel: 'Tidal Rave Ghana · EchoHouse',
     brandCity: 'Accra, Ghana',
     title: TIDAL_RAVE_GENUINE_TITLE,
-    content:
-      "Africa's Biggest Beach Festival returns to La Palm Royal Beach Hotel for the Rave Takeover by Davido! #NoRaverLeftBehind\n\nGet your tickets now: dial *714*20# or visit www.tidalravefestival.com for more info.\n\nPowered by São.",
+    content: TIDAL_RAVE_GENUINE_CONTENT,
     photoUrl: TIDAL_RAVE_POSTER_PATH,
     videoUrl: '',
     eventDate: 'Sat, 14 Nov 2026 · 12:00 PM',
@@ -542,83 +563,30 @@ export const FEATURED_AFRICAN_FEED: FeaturedPostTemplate[] = [
   },
 ];
 
-export async function publishStarterShowcasePosts(author: PublicProfile): Promise<void> {
-  for (const item of FEATURED_AFRICAN_FEED) {
-    await createPost({
-      author,
-      category: item.category,
-      mediaFormat: item.mediaFormat,
-      visibility: 'public',
-      title: item.title,
-      content: item.content,
-      photoUrl: item.photoUrl,
-      videoUrl: item.videoUrl,
-      eventDate: item.eventDate,
-      eventLocation: item.eventLocation,
-      promoCode: item.promoCode,
-      hasForm: item.hasForm,
-      formConfig: item.formConfig,
-    });
-  }
-}
-
-export async function seedShowcaseIfFeedEmpty(author: PublicProfile): Promise<boolean> {
-  try {
-    const existingSnap = await getDocs(
-      query(collection(db, 'posts'), where('visibility', '==', 'public'), limit(1))
-    );
-    if (!existingSnap.empty) {
-      return false;
-    }
-    await publishStarterShowcasePosts(author);
-    return true;
-  } catch (error) {
-    return handleFirestoreError(error, OperationType.LIST, 'posts');
-  }
-}
-
-export async function syncFeedToOnlyTidalRave(
-  author: PublicProfile,
-  force = false
-): Promise<{ deleted: number; created: boolean }> {
-  const storageKey = `moodspace_tidal_rave_only_v2_${author.uid}`;
-  if (!force && typeof window !== 'undefined' && window.localStorage.getItem(storageKey)) {
-    return { deleted: 0, created: false };
+export async function cleanupAccidentalAutoSeededPosts(uid: string): Promise<number> {
+  const storageKey = `moodspace_cleanup_autoseed_v3_${uid}`;
+  if (typeof window !== 'undefined' && window.localStorage.getItem(storageKey)) {
+    return 0;
   }
 
   try {
     const mySnap = await getDocs(
-      query(collection(db, 'posts'), where('authorId', '==', author.uid))
+      query(collection(db, 'posts'), where('authorId', '==', uid))
     );
 
-    let hasGenuineTidalRave = false;
     let deleted = 0;
-
     for (const snapDoc of mySnap.docs) {
       const post = snapDoc.data() as Post;
-      const isGenuineMatch =
-        post.title === TIDAL_RAVE_GENUINE_TITLE &&
-        post.photoUrl === TIDAL_RAVE_POSTER_PATH &&
-        !hasGenuineTidalRave;
-
-      if (isGenuineMatch) {
-        hasGenuineTidalRave = true;
-      } else {
+      if (isAccidentalAutoSeededPost(post)) {
         await deleteDoc(doc(db, 'posts', snapDoc.id));
         deleted += 1;
       }
     }
 
-    let created = false;
-    if (!hasGenuineTidalRave) {
-      await publishStarterShowcasePosts(author);
-      created = true;
-    }
-
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(storageKey, '1');
     }
-    return { deleted, created };
+    return deleted;
   } catch (error) {
     return handleFirestoreError(error, OperationType.WRITE, 'posts');
   }

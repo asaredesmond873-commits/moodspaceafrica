@@ -23,19 +23,19 @@ const FORM_PRESETS: { name: string; config: FormConfig }[] = [
     name: 'Event RSVP',
     config: {
       title: 'Event Registration & Seat Hold',
-      description: 'Reserve your spot and let us know if you need accessibility or group seating.',
+      description: 'Reserve your spot and let us know if you need group seating in Accra or Kumasi.',
       isOpen: true,
       fields: [
         { id: 'full_name', label: 'Full Name', type: 'text', required: true, options: [] },
-        { id: 'phone', label: 'WhatsApp / Phone Number', type: 'tel', required: true, options: [] },
+        { id: 'phone', label: 'WhatsApp / Phone Number (Ghana)', type: 'tel', required: true, options: [] },
         {
           id: 'ticket_tier',
           label: 'Preferred Session / Tier',
           type: 'select',
           required: true,
-          options: ['Standard Entry', 'VIP Lounge', 'Creator Press Pass'],
+          options: ['Regular Gate Pass', 'VIP Lounge', 'Creator / Media Pass'],
         },
-        { id: 'updates', label: 'Receive event reminders', type: 'checkbox', required: false, options: [] },
+        { id: 'updates', label: 'Receive event reminders on WhatsApp', type: 'checkbox', required: false, options: [] },
       ],
     },
   },
@@ -47,21 +47,21 @@ const FORM_PRESETS: { name: string; config: FormConfig }[] = [
       isOpen: true,
       fields: [
         { id: 'customer_name', label: 'Full Name', type: 'text', required: true, options: [] },
-        { id: 'email', label: 'Email Address', type: 'email', required: true, options: [] },
-        { id: 'city', label: 'Delivery City', type: 'text', required: false, options: [] },
+        { id: 'email', label: 'Email or WhatsApp Contact', type: 'text', required: true, options: [] },
+        { id: 'city', label: 'Delivery Area (e.g. East Legon, Osu, Kumasi)', type: 'text', required: false, options: [] },
       ],
     },
   },
   {
     name: 'Vendor Inquiry',
     config: {
-      title: 'Business & Partner Application',
-      description: 'Tell us about your brand or offering so our team can follow up.',
+      title: 'Business & Vendor Application',
+      description: 'Tell us about your Ghanaian or African brand so our team can follow up.',
       isOpen: true,
       fields: [
-        { id: 'brand_name', label: 'Brand / Organization Name', type: 'text', required: true, options: [] },
-        { id: 'contact', label: 'Email or WhatsApp', type: 'text', required: true, options: [] },
-        { id: 'pitch', label: 'Describe what you are showcasing', type: 'textarea', required: true, options: [] },
+        { id: 'brand_name', label: 'Brand / Shop Name', type: 'text', required: true, options: [] },
+        { id: 'contact', label: 'WhatsApp Number or Email', type: 'text', required: true, options: [] },
+        { id: 'pitch', label: 'Describe what you are showcasing or selling', type: 'textarea', required: true, options: [] },
       ],
     },
   },
@@ -179,7 +179,7 @@ export function FormBuilder({
                 maxLength={SCHEMA_LIMITS.FORM_TITLE_MAX}
                 value={formConfig.title}
                 onChange={(e) => onChange({ ...formConfig, title: e.target.value })}
-                placeholder="e.g. Request Table Booking or Feedback"
+                placeholder="e.g. Accra Pop-Up RSVP or MoMo Order Request"
                 className="w-full px-3 py-2 text-sm bg-white border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
               />
             </div>
@@ -208,7 +208,7 @@ export function FormBuilder({
               maxLength={SCHEMA_LIMITS.FORM_DESC_MAX}
               value={formConfig.description}
               onChange={(e) => onChange({ ...formConfig, description: e.target.value })}
-              placeholder="Explain what happens after someone submits..."
+              placeholder="e.g. We will confirm your table or delivery via WhatsApp."
               className="w-full px-3 py-2 text-sm bg-white border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
             />
           </div>
@@ -252,7 +252,7 @@ export function FormBuilder({
                           maxLength={SCHEMA_LIMITS.FORM_FIELD_LABEL_MAX}
                           value={field.label}
                           onChange={(e) => updateField(index, { label: e.target.value })}
-                          placeholder="e.g. Which ticket tier or city?"
+                          placeholder="e.g. Preferred pickup hub in Accra or Kumasi?"
                           className="w-full px-2.5 py-1.5 text-sm border border-[#D4D1CA] rounded-md focus:outline-none focus:border-[#0E7C5B]"
                         />
                       </div>
@@ -341,7 +341,7 @@ export function FormBuilder({
                                 .slice(0, 20),
                             })
                           }
-                          placeholder="e.g. Early Bird, VIP Table, Backstage"
+                          placeholder="e.g. Osu Pickup, East Legon Delivery, VIP Table"
                           className="w-full px-2.5 py-1.5 text-xs border border-[#D4D1CA] rounded-md focus:outline-none focus:border-[#0E7C5B]"
                         />
                       </div>

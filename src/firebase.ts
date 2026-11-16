@@ -72,4 +72,10 @@ async function testConnection() {
   }
 }
 
-void testConnection();
+if (typeof window !== 'undefined') {
+  window.setTimeout(() => {
+    void testConnection();
+  }, 1500);
+} else {
+  void testConnection();
+}

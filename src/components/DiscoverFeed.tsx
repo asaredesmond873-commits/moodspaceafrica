@@ -1,7 +1,7 @@
-import { Calendar, MapPin, Search } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { Calendar, MapPin, Search, Share2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { FEATURED_AFRICAN_FEED, syncFeedToOnlyTidalRave } from '../services/firestoreService';
+import { FEATURED_AFRICAN_FEED } from '../services/firestoreService';
 import type { MediaFormat, Post, PostCategory } from '../types';
 import { PostCard } from './PostCard';
 
@@ -24,18 +24,14 @@ export function DiscoverFeed({
   onOpenForm,
   onNotify,
 }: DiscoverFeedProps) {
-  const { user, profile, signInWithGoogle } = useAuth();
+  const { user, signInWithGoogle } = useAuth();
   const [categoryFilter, setCategoryFilter] = useState<'all' | PostCategory>(initialCategory);
   const [formatFilter, setFormatFilter] = useState<'all' | MediaFormat>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [seeding, setSeeding] = useState(false);
 
-  // Keep category synced when user switches top nav between Discover, Events, Promos
-  const [lastInitial, setLastInitial] = useState(initialCategory);
-  if (initialCategory !== lastInitial) {
-    setLastInitial(initialCategory);
+  useEffect(() => {
     setCategoryFilter(initialCategory);
-  }
+  }, [initialCategory]);
 
   const filteredPosts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -53,20 +49,28 @@ export function DiscoverFeed({
     });
   }, [posts, categoryFilter, formatFilter, searchQuery]);
 
-  const handleSeedShowcase = async () => {
-    let activeProfile = profile;
-    if (!user || !activeProfile) {
-      activeProfile = await signInWithGoogle();
-      if (!activeProfile) return;
-    }
-    setSeeding(true);
+  const filteredFeatured = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return FEATURED_AFRICAN_FEED.filter((item) => {
+      if (categoryFilter !== 'all' && item.category !== categoryFilter) return false;
+      if (formatFilter !== 'all' && item.mediaFormat !== formatFilter) return false;
+      if (!q) return true;
+      return (
+        item.title.toLowerCase().includes(q) ||
+        item.content.toLowerCase().includes(q) ||
+        item.brandLabel.toLowerCase().includes(q) ||
+        item.brandCity.toLowerCase().includes(q) ||
+        item.eventLocation.toLowerCase().includes(q)
+      );
+    });
+  }, [categoryFilter, formatFilter, searchQuery]);
+
+  const handleShareFeatured = async (title: string) => {
     try {
-      await syncFeedToOnlyTidalRave(activeProfile, true);
-      onNotify('Published Tidal Rave Ghana 2026 event to the live feed');
+      await navigator.clipboard.writeText(window.location.origin);
+      onNotify(`Link copied for ${title}`);
     } catch {
-      onNotify('Could not publish post right now.');
-    } finally {
-      setSeeding(false);
+      onNotify('Share link ready in browser address bar');
     }
   };
 
@@ -78,14 +82,15 @@ export function DiscoverFeed({
           <div className="lg:col-span-6 flex flex-col justify-between gap-6">
             <div className="space-y-4">
               <p className="text-xs font-semibold text-[#0E7C5B]">
-                Pan-African Creator &amp; Business Feed
+                Ghana &amp; Pan-African Creator &amp; Business Feed
               </p>
               <h1 className="font-display text-3xl sm:text-5xl font-bold tracking-tight text-[#141413] leading-[1.1] text-balance">
-                Announcements, events, and promos built for Africa’s communities.
+                Announcements, events, and promos built for Ghana &amp; Africa.
               </h1>
               <p className="text-base text-[#5E5D59] leading-relaxed max-w-xl">
-                Share updates in text, photo, video, or mixed formats. Attach adjustable RSVP and
-                order forms, connect through comments, and track every interaction from your dashboard.
+                Share updates in text, photo, video, or mixed formats. Optionally attach custom
+                forms with your own questions, connect through comments, and track engagements from
+                your dashboard.
               </p>
             </div>
 
@@ -122,6 +127,8 @@ export function DiscoverFeed({
                 src="/assets/aistudio/99bc11007403730_dbb0dfe7.jpg"
                 alt="Panelists and audience at the Africa Tech Festival discussing Africa's digital future"
                 referrerPolicy="no-referrer"
+                fetchPriority="high"
+                decoding="async"
                 className="w-full h-full object-cover"
               />
             </div>
@@ -179,7 +186,7 @@ export function DiscoverFeed({
             type="search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search city, creator, event, or promo..."
+            placeholder="Search Accra, Kumasi, event, or promo..."
             className="w-full pl-9 pr-3.5 py-2 text-sm bg-white border border-[#E7E5E0] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
           />
         </div>
@@ -187,149 +194,19 @@ export function DiscoverFeed({
 
       {/* Feed Stream */}
       <section className="max-w-3xl mx-auto space-y-6">
-        {loading ? (
-          <div className="space-y-5">
-            {[1, 2, 3].map((item) => (
-              <div
-                key={item}
-                className="bg-white border border-[#E7E5E0] rounded-2xl p-6 space-y-4 animate-pulse"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-[#E7E5E0]" />
-                  <div className="space-y-2 flex-1">
-                    <div className="h-3.5 w-36 bg-[#E7E5E0] rounded" />
-                    <div className="h-3 w-52 bg-[#F0EEE9] rounded" />
-                  </div>
-                </div>
-                <div className="h-5 w-3/4 bg-[#E7E5E0] rounded" />
-                <div className="h-44 w-full bg-[#F0EEE9] rounded-xl" />
+        {loading && filteredFeatured.length === 0 ? (
+          <div className="bg-white border border-[#E7E5E0] rounded-2xl p-6 space-y-4 animate-pulse">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-[#E7E5E0]" />
+              <div className="space-y-2 flex-1">
+                <div className="h-3.5 w-36 bg-[#E7E5E0] rounded" />
+                <div className="h-3 w-52 bg-[#F0EEE9] rounded" />
               </div>
-            ))}
+            </div>
+            <div className="h-5 w-3/4 bg-[#E7E5E0] rounded" />
+            <div className="h-44 w-full bg-[#F0EEE9] rounded-xl" />
           </div>
-        ) : filteredPosts.length === 0 && posts.length === 0 ? (
-          <div className="space-y-6">
-            {(() => {
-              const q = searchQuery.trim().toLowerCase();
-              const filteredFeatured = FEATURED_AFRICAN_FEED.filter(
-                (item) =>
-                  (categoryFilter === 'all' || item.category === categoryFilter) &&
-                  (formatFilter === 'all' || item.mediaFormat === formatFilter) &&
-                  (!q ||
-                    item.title.toLowerCase().includes(q) ||
-                    item.content.toLowerCase().includes(q) ||
-                    item.brandLabel.toLowerCase().includes(q) ||
-                    item.brandCity.toLowerCase().includes(q) ||
-                    item.eventLocation.toLowerCase().includes(q))
-              );
-
-              if (filteredFeatured.length === 0) {
-                return (
-                  <div className="bg-white border border-[#E7E5E0] rounded-2xl p-8 text-center space-y-4">
-                    <h3 className="font-display text-xl font-bold text-[#141413]">
-                      No matching posts found
-                    </h3>
-                    <p className="text-sm text-[#5E5D59] max-w-md mx-auto">
-                      Try clearing your search or switching category and media filters.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCategoryFilter('all');
-                        setFormatFilter('all');
-                        setSearchQuery('');
-                      }}
-                      className="px-4 py-2 text-sm font-medium text-[#141413] border border-[#D4D1CA] rounded-lg hover:border-[#141413] cursor-pointer"
-                    >
-                      Reset Filters
-                    </button>
-                  </div>
-                );
-              }
-
-              return filteredFeatured.map((item) => (
-                <article
-                  key={item.title}
-                  className="bg-white border border-[#E7E5E0] rounded-2xl p-5 sm:p-6 space-y-4"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-[#141413]">{item.brandLabel}</p>
-                      <p className="text-xs text-[#5E5D59]">
-                        <span className="font-medium text-[#0E7C5B] capitalize">
-                          {item.category}
-                        </span>{' '}
-                        · <span className="capitalize">{item.mediaFormat}</span> · {item.brandCity}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2.5">
-                    <h3 className="font-display text-xl sm:text-2xl font-bold text-[#141413] leading-snug text-balance">
-                      {item.title}
-                    </h3>
-                    <p className="text-[15px] text-[#353431] leading-relaxed whitespace-pre-line">
-                      {item.content}
-                    </p>
-                  </div>
-
-                  {(item.eventDate || item.eventLocation) && (
-                    <div className="pt-3.5 border-t border-[#F0EEE9] flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-[#353431]">
-                      {item.eventDate && (
-                        <div className="inline-flex items-center gap-1.5">
-                          <Calendar className="w-3.5 h-3.5 text-[#0E7C5B]" />
-                          <span className="font-medium">{item.eventDate}</span>
-                        </div>
-                      )}
-                      {item.eventLocation && (
-                        <div className="inline-flex items-center gap-1.5">
-                          <MapPin className="w-3.5 h-3.5 text-[#0E7C5B]" />
-                          <span>{item.eventLocation}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {item.photoUrl && (
-                    <div className="rounded-xl overflow-hidden border border-[#E7E5E0] bg-[#FAF9F7] flex items-center justify-center">
-                      <img
-                        src={item.photoUrl}
-                        alt={item.title}
-                        referrerPolicy="no-referrer"
-                        className="w-full max-h-[560px] object-contain"
-                      />
-                    </div>
-                  )}
-
-                  <div className="pt-3 border-t border-[#E7E5E0] flex flex-wrap items-center justify-between gap-3">
-                    <span className="text-xs text-[#5E5D59]">
-                      {user
-                        ? 'Publish this event to the live feed to enable likes, comments, and shares'
-                        : 'Sign in with Google to like, comment, share, or post your own update'}
-                    </span>
-                    {user ? (
-                      <button
-                        type="button"
-                        disabled={seeding}
-                        onClick={handleSeedShowcase}
-                        className="px-4 py-2 text-xs font-semibold text-white bg-[#0E7C5B] rounded-lg hover:bg-[#095E44] disabled:opacity-60 cursor-pointer whitespace-nowrap"
-                      >
-                        {seeding ? 'Publishing...' : 'Publish to Live Feed'}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => void signInWithGoogle()}
-                        className="px-4 py-2 text-xs font-semibold text-white bg-[#141413] rounded-lg hover:bg-[#2C2C2A] cursor-pointer whitespace-nowrap"
-                      >
-                        Sign In with Google
-                      </button>
-                    )}
-                  </div>
-                </article>
-              ));
-            })()}
-          </div>
-        ) : filteredPosts.length === 0 ? (
+        ) : filteredPosts.length === 0 && filteredFeatured.length === 0 ? (
           <div className="bg-white border border-[#E7E5E0] rounded-2xl p-8 sm:p-10 text-center space-y-4">
             <h2 className="font-display text-xl font-bold text-[#141413]">
               No matching posts found
@@ -352,15 +229,95 @@ export function DiscoverFeed({
             </div>
           </div>
         ) : (
-          filteredPosts.map((post) => (
-            <PostCard
-              key={post.id}
-              post={post}
-              isHighlighted={highlightedPostId === post.id}
-              onOpenForm={onOpenForm}
-              onNotify={onNotify}
-            />
-          ))
+          <>
+            {filteredPosts.map((post) => (
+              <PostCard
+                key={post.id}
+                post={post}
+                isHighlighted={highlightedPostId === post.id}
+                onOpenForm={onOpenForm}
+                onNotify={onNotify}
+              />
+            ))}
+
+            {filteredFeatured.map((item) => (
+              <article
+                key={item.title}
+                className="bg-white border border-[#E7E5E0] rounded-2xl p-5 sm:p-6 space-y-4"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-[#141413] text-white text-xs font-semibold flex items-center justify-center shrink-0">
+                    TR
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-[#141413] truncate">
+                      {item.brandLabel}
+                    </p>
+                    <p className="text-xs text-[#5E5D59]">
+                      <span className="font-medium text-[#0E7C5B] capitalize">
+                        {item.category}
+                      </span>{' '}
+                      · <span className="capitalize">{item.mediaFormat}</span> · {item.brandCity}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-2.5">
+                  <h3 className="font-display text-xl sm:text-2xl font-bold text-[#141413] leading-snug text-balance">
+                    {item.title}
+                  </h3>
+                  <p className="text-[15px] text-[#353431] leading-relaxed whitespace-pre-line">
+                    {item.content}
+                  </p>
+                </div>
+
+                {(item.eventDate || item.eventLocation) && (
+                  <div className="pt-3.5 border-t border-[#F0EEE9] flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-[#353431]">
+                    {item.eventDate && (
+                      <div className="inline-flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-[#0E7C5B]" />
+                        <span className="font-medium">{item.eventDate}</span>
+                      </div>
+                    )}
+                    {item.eventLocation && (
+                      <div className="inline-flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-[#0E7C5B]" />
+                        <span>{item.eventLocation}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {item.photoUrl && (
+                  <div className="rounded-xl overflow-hidden border border-[#E7E5E0] bg-[#FAF9F7] flex items-center justify-center">
+                    <img
+                      src={item.photoUrl}
+                      alt={item.title}
+                      referrerPolicy="no-referrer"
+                      decoding="async"
+                      className="w-full max-h-[560px] object-contain"
+                    />
+                  </div>
+                )}
+
+                <div className="pt-3.5 border-t border-[#E7E5E0] flex flex-wrap items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => void handleShareFeatured(item.title)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-[#5E5D59] hover:text-[#141413] hover:bg-[#FAF9F7] rounded-lg transition-colors cursor-pointer"
+                  >
+                    <Share2 className="w-4 h-4" />
+                    <span>Share Event</span>
+                  </button>
+
+                  <span className="text-xs text-[#5E5D59]">
+                    Tickets: <strong className="font-mono text-[#141413]">*714*20#</strong> ·{' '}
+                    www.tidalravefestival.com
+                  </span>
+                </div>
+              </article>
+            ))}
+          </>
         )}
       </section>
     </main>
