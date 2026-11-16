@@ -4,7 +4,7 @@ import type { FormSubmission, Post } from '../types';
 export const STUDIO_PRESET_IMAGES = [
   {
     label: 'Tidal Rave Ghana',
-    url: '/src/assets/images/tidal_rave_ghana_1794859059932.jpg',
+    url: '/assets/aistudio/99bc11007403730_f92625d8.jpg',
   },
   {
     label: 'Obala Coffee & PayFlow',

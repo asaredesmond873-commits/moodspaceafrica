@@ -684,8 +684,9 @@ export function DashboardView({
               {postsWithForms.length === 0 ? (
                 <div className="bg-white border border-[#E7E5E0] rounded-2xl p-8 text-center space-y-3">
                   <p className="text-sm text-[#5E5D59]">
-                    None of your posts have an attached form yet. Enable &ldquo;Adjustable Action
-                    Form&rdquo; when creating or editing a post.
+                    None of your posts have a custom form attached yet. Choose &ldquo;Add Custom
+                    Form&rdquo; when creating or editing a post to add your own questions and
+                    response formats.
                   </p>
                 </div>
               ) : (

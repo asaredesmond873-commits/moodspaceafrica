@@ -284,14 +284,14 @@ export function PostCard({
 
       {/* Photo Media (shown for photo or mix posts, or as fallback when no valid video) */}
       {post.photoUrl && (post.mediaFormat !== 'video' || !parsedVideo || parsedVideo.kind === 'invalid') && (
-        <div className="mt-4 rounded-xl overflow-hidden border border-[#E7E5E0] bg-[#FAF9F7]">
+        <div className="mt-4 rounded-xl overflow-hidden border border-[#E7E5E0] bg-[#FAF9F7] flex items-center justify-center">
           {!imgError ? (
             <img
               src={post.photoUrl}
               alt={post.title}
               referrerPolicy="no-referrer"
               onError={() => setImgError(true)}
-              className="w-full max-h-[440px] object-cover"
+              className="w-full max-h-[560px] object-contain"
             />
           ) : (
             <div className="h-52 flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-[#F3F1EC] to-[#E7E5E0] text-[#5E5D59] px-4 text-center">

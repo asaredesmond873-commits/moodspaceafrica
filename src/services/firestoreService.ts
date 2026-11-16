@@ -515,187 +515,29 @@ export interface FeaturedPostTemplate {
   formConfig: FormConfig;
 }
 
+export const TIDAL_RAVE_POSTER_PATH = '/assets/aistudio/99bc11007403730_f92625d8.jpg';
+export const TIDAL_RAVE_GENUINE_TITLE = 'Tidal Rave Ghana 2026 — Rave Takeover by Davido';
+
 export const FEATURED_AFRICAN_FEED: FeaturedPostTemplate[] = [
   {
     category: 'event',
-    mediaFormat: 'mix',
-    brandLabel: 'Tidal Rave Festival · EchoHouse',
+    mediaFormat: 'photo',
+    brandLabel: 'Tidal Rave Ghana · EchoHouse',
     brandCity: 'Accra, Ghana',
-    title: 'Tidal Rave Festival Ghana — La Palm Beach Reel & VIP Wave Pass',
+    title: TIDAL_RAVE_GENUINE_TITLE,
     content:
-      'Watch the highlights from Ghana’s iconic beachfront music, fashion, and creator festival at La Palm Royal Beach Hotel. From sunset DJ sets to live performances, food villages, and beach games — lock in early access for the next Tidal Rave edition using the RSVP form.',
-    photoUrl: '/src/assets/images/tidal_rave_ghana_1794859059932.jpg',
-    videoUrl: '/assets/videos/tidal_rave_aftermovie.mp4',
-    eventDate: 'Sat 20 Dec · 15:00 GMT till dawn',
+      "Africa's Biggest Beach Festival returns to La Palm Royal Beach Hotel for the Rave Takeover by Davido! #NoRaverLeftBehind\n\nGet your tickets now: dial *714*20# or visit www.tidalravefestival.com for more info.\n\nPowered by São.",
+    photoUrl: TIDAL_RAVE_POSTER_PATH,
+    videoUrl: '',
+    eventDate: 'Sat, 14 Nov 2026 · 12:00 PM',
     eventLocation: 'La Palm Royal Beach Hotel, Accra',
-    promoCode: 'TIDALWAVE15',
-    hasForm: true,
-    formConfig: {
-      title: 'Tidal Rave Early Wave & VIP Pass',
-      description: 'Reserve early-bird beach passes or brand activation booth slots at La Palm Beach.',
-      isOpen: true,
-      fields: [
-        { id: 'full_name', label: 'Full Name', type: 'text', required: true, options: [] },
-        { id: 'whatsapp', label: 'Phone / WhatsApp', type: 'tel', required: true, options: [] },
-        {
-          id: 'pass_type',
-          label: 'Pass Selection',
-          type: 'select',
-          required: true,
-          options: ['Early Bird Beach Pass', 'Cabana & VIP Lounge', 'Brand Activation / Vendor Booth'],
-        },
-        { id: 'updates', label: 'Notify me when lineup drops', type: 'checkbox', required: false, options: [] },
-      ],
-    },
-  },
-  {
-    category: 'event',
-    mediaFormat: 'video',
-    brandLabel: 'Africa Tech Festival',
-    brandCity: 'Cape Town, South Africa',
-    title: 'Africa Tech Festival — Building Africa’s Digital Future & Next Gen Talent',
-    content:
-      'Watch key moments from the continent’s flagship digital skills and founder showcase. Leaders across engineering, fintech, and youth education share how African builders are scaling AI, cloud, and mobile-first products globally.',
-    photoUrl: '/assets/aistudio/99bc11007403730_dbb0dfe7.jpg',
-    videoUrl: '/assets/videos/africa_tech_highlights.mp4',
-    eventDate: 'On-Demand Recap · Next Summit Nov',
-    eventLocation: 'CTICC Cape Town & Livestream',
     promoCode: '',
-    hasForm: true,
+    hasForm: false,
     formConfig: {
-      title: 'Next Gen Talent & Speaker Digest',
-      description: 'Sign up for session recordings, skill scholarship alerts, and speaker slides.',
-      isOpen: true,
-      fields: [
-        { id: 'name', label: 'Full Name', type: 'text', required: true, options: [] },
-        { id: 'email', label: 'Work or Student Email', type: 'email', required: true, options: [] },
-        {
-          id: 'track',
-          label: 'Primary Track Interest',
-          type: 'select',
-          required: true,
-          options: ['AI & Data Engineering', 'Fintech & Payments', 'Startup Founders & VC'],
-        },
-      ],
-    },
-  },
-  {
-    category: 'promo',
-    mediaFormat: 'mix',
-    brandLabel: 'Obala Coffee & PayFlow Africa',
-    brandCity: 'Lagos, Nigeria',
-    title: '30% Tap-to-Pay Cashback Week — Local Roasters & SME Merchant Promo',
-    content:
-      'PayFlow Africa is partnering with independent coffee roasters, bakeries, and neighborhood boutiques across Lagos, Accra, and Nairobi. Tap with PayFlow at participating counters to unlock 30% instant cashback plus zero merchant settlement fees for 30 days.',
-    photoUrl: '/src/assets/images/african_company_promo_1794859060543.jpg',
-    videoUrl: '/assets/videos/africa_brand_promos.mp4',
-    eventDate: 'Valid all month · Lagos, Accra & Nairobi',
-    eventLocation: 'Participating Obala & PayFlow Merchants',
-    promoCode: 'PAYFLOW30',
-    hasForm: true,
-    formConfig: {
-      title: 'Claim Cashback or Enroll Your Shop',
-      description: 'Customers can claim a digital promo voucher, and business owners can onboard in 24 hours.',
-      isOpen: true,
-      fields: [
-        { id: 'applicant_name', label: 'Full Name or Business Name', type: 'text', required: true, options: [] },
-        { id: 'contact', label: 'Email or WhatsApp', type: 'text', required: true, options: [] },
-        {
-          id: 'role',
-          label: 'How are you joining?',
-          type: 'select',
-          required: true,
-          options: ['Customer Voucher Claim', 'Retail / Café Merchant Onboarding'],
-        },
-      ],
-    },
-  },
-  {
-    category: 'promo',
-    mediaFormat: 'photo',
-    brandLabel: 'Adire & Kente Collective',
-    brandCity: 'Accra, Ghana',
-    title: '25% Launch Offer — Handwoven Indigo & Raw Linen Capsule',
-    content:
-      'Hand-dyed in Abeokuta and tailored in Accra for warm coastal evenings and studio days. Enjoy 25% off your first capsule order with Pan-African express courier delivery.',
-    photoUrl: '/src/assets/images/showcase_fashion_promo_1794838620670.jpg',
-    videoUrl: '',
-    eventDate: '',
-    eventLocation: 'Accra · Lagos · Pan-African Delivery',
-    promoCode: 'MOOD25AFRICA',
-    hasForm: true,
-    formConfig: {
-      title: 'Request Capsule Lookbook & Sizing',
-      description: 'Pick your favourite piece and share your city for express delivery quotes.',
-      isOpen: true,
-      fields: [
-        { id: 'buyer_name', label: 'Your Name', type: 'text', required: true, options: [] },
-        { id: 'contact_email', label: 'Email Address', type: 'email', required: true, options: [] },
-        {
-          id: 'piece_interest',
-          label: 'Collection Piece',
-          type: 'select',
-          required: true,
-          options: ['Indigo Adire Wrap', 'Tailored Raw Linen Tunic', 'Woven Ceremonial Throw'],
-        },
-        { id: 'notes', label: 'Custom sizing or delivery city', type: 'textarea', required: false, options: [] },
-      ],
-    },
-  },
-  {
-    category: 'event',
-    mediaFormat: 'photo',
-    brandLabel: 'Accra Acoustic & Makers Collective',
-    brandCity: 'Accra, Ghana',
-    title: 'Osu Courtyard Acoustic & Local Artisans Evening',
-    content:
-      'An intimate open-air showcase bringing together acoustic vocalists, kora players, small-batch skincare founders, and street-food chefs under warm courtyard lights.',
-    photoUrl: '/src/assets/images/showcase_music_festival_1794838619312.jpg',
-    videoUrl: '',
-    eventDate: 'Friday, 28 Nov · 18:30 GMT',
-    eventLocation: 'Osu Cultural Courtyard, Accra',
-    promoCode: '',
-    hasForm: true,
-    formConfig: {
-      title: 'Courtyard Evening RSVP',
-      description: 'Hold your seat or inquire about setting up a maker table.',
-      isOpen: true,
-      fields: [
-        { id: 'full_name', label: 'Full Name', type: 'text', required: true, options: [] },
-        { id: 'whatsapp', label: 'Phone / WhatsApp', type: 'tel', required: true, options: [] },
-        {
-          id: 'pass_type',
-          label: 'Attendance Tier',
-          type: 'select',
-          required: true,
-          options: ['General Courtyard Pass', 'Front Row Acoustic Seat', 'Maker Booth Inquiry'],
-        },
-      ],
-    },
-  },
-  {
-    category: 'announcement',
-    mediaFormat: 'mix',
-    brandLabel: 'Kilimani & Kigali Builders Network',
-    brandCity: 'Nairobi, Kenya',
-    title: 'East Africa SME Zero-Fee Logistics & Founders Fellowship Open',
-    content:
-      'Independent e-commerce brands, agri-tech teams, and creative studios across Kenya and Rwanda can now apply for zero-fee last-mile shipping credits plus weekly mentorship in Kilimani and Kigali.',
-    photoUrl: '/src/assets/images/showcase_tech_summit_1794838620227.jpg',
-    videoUrl: '',
-    eventDate: 'Applications close 15 Dec',
-    eventLocation: 'Nairobi · Kigali · Hybrid',
-    promoCode: 'KILIMANI2026',
-    hasForm: true,
-    formConfig: {
-      title: 'SME Logistics & Fellowship Form',
-      description: 'Quick 3-question application for East African founders and merchants.',
-      isOpen: true,
-      fields: [
-        { id: 'founder_name', label: 'Founder or Company Name', type: 'text', required: true, options: [] },
-        { id: 'city', label: 'City & Country', type: 'text', required: true, options: [] },
-        { id: 'project_summary', label: 'Describe your product or service', type: 'textarea', required: true, options: [] },
-      ],
+      title: '',
+      description: '',
+      isOpen: false,
+      fields: [],
     },
   },
 ];
@@ -730,7 +572,55 @@ export async function seedShowcaseIfFeedEmpty(author: PublicProfile): Promise<bo
     }
     await publishStarterShowcasePosts(author);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    return handleFirestoreError(error, OperationType.LIST, 'posts');
   }
 }
+
+export async function syncFeedToOnlyTidalRave(
+  author: PublicProfile,
+  force = false
+): Promise<{ deleted: number; created: boolean }> {
+  const storageKey = `moodspace_tidal_rave_only_v2_${author.uid}`;
+  if (!force && typeof window !== 'undefined' && window.localStorage.getItem(storageKey)) {
+    return { deleted: 0, created: false };
+  }
+
+  try {
+    const mySnap = await getDocs(
+      query(collection(db, 'posts'), where('authorId', '==', author.uid))
+    );
+
+    let hasGenuineTidalRave = false;
+    let deleted = 0;
+
+    for (const snapDoc of mySnap.docs) {
+      const post = snapDoc.data() as Post;
+      const isGenuineMatch =
+        post.title === TIDAL_RAVE_GENUINE_TITLE &&
+        post.photoUrl === TIDAL_RAVE_POSTER_PATH &&
+        !hasGenuineTidalRave;
+
+      if (isGenuineMatch) {
+        hasGenuineTidalRave = true;
+      } else {
+        await deleteDoc(doc(db, 'posts', snapDoc.id));
+        deleted += 1;
+      }
+    }
+
+    let created = false;
+    if (!hasGenuineTidalRave) {
+      await publishStarterShowcasePosts(author);
+      created = true;
+    }
+
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(storageKey, '1');
+    }
+    return { deleted, created };
+  } catch (error) {
+    return handleFirestoreError(error, OperationType.WRITE, 'posts');
+  }
+}
+

@@ -21,13 +21,10 @@ interface PostComposerModalProps {
 }
 
 const DEFAULT_FORM_CONFIG: FormConfig = {
-  title: 'Event RSVP & Inquiry',
-  description: 'Fill out your details below to connect with us.',
+  title: '',
+  description: '',
   isOpen: true,
-  fields: [
-    { id: 'full_name', label: 'Full Name', type: 'text', required: true, options: [] },
-    { id: 'contact', label: 'Phone / WhatsApp or Email', type: 'text', required: true, options: [] },
-  ],
+  fields: [],
 };
 
 export function PostComposerModal({
@@ -128,6 +125,16 @@ export function PostComposerModal({
     if (mediaFormat === 'video' && !videoUrl.trim()) {
       setErrorMsg('Please enter a video link (MP4, YouTube, or Vimeo) or switch media format.');
       return;
+    }
+    if (hasForm) {
+      if (formConfig.fields.length === 0) {
+        setErrorMsg('Please add at least one question to your custom form, or choose "No Form".');
+        return;
+      }
+      if (formConfig.fields.some((f) => !f.label.trim())) {
+        setErrorMsg('Please enter a question for every row in your custom form.');
+        return;
+      }
     }
 
     setSaving(true);

@@ -10,11 +10,11 @@ interface FormBuilderProps {
 }
 
 const FIELD_TYPES: { value: FormFieldType; label: string }[] = [
-  { value: 'text', label: 'Short Text' },
-  { value: 'email', label: 'Email' },
-  { value: 'tel', label: 'Phone / WhatsApp' },
-  { value: 'textarea', label: 'Long Answer' },
-  { value: 'select', label: 'Dropdown Options' },
+  { value: 'text', label: 'Short Text Response' },
+  { value: 'textarea', label: 'Long Paragraph Response' },
+  { value: 'select', label: 'Multiple Choice / Dropdown' },
+  { value: 'email', label: 'Email Address' },
+  { value: 'tel', label: 'Phone / WhatsApp Number' },
   { value: 'checkbox', label: 'Yes / No Checkbox' },
 ];
 
@@ -77,7 +77,7 @@ export function FormBuilder({
     if (formConfig.fields.length >= SCHEMA_LIMITS.FORM_FIELDS_MAX) return;
     const nextField: FormField = {
       id: generateSafeId('fld'),
-      label: `Question ${formConfig.fields.length + 1}`,
+      label: '',
       type: 'text',
       required: false,
       options: [],
@@ -86,6 +86,25 @@ export function FormBuilder({
       ...formConfig,
       fields: [...formConfig.fields, nextField],
     });
+  };
+
+  const handleToggleMode = (enableForm: boolean) => {
+    onToggleHasForm(enableForm);
+    if (enableForm && formConfig.fields.length === 0) {
+      onChange({
+        ...formConfig,
+        isOpen: true,
+        fields: [
+          {
+            id: generateSafeId('fld'),
+            label: '',
+            type: 'text',
+            required: true,
+            options: [],
+          },
+        ],
+      });
+    }
   };
 
   const updateField = (index: number, patch: Partial<FormField>) => {
@@ -111,46 +130,45 @@ export function FormBuilder({
 
   return (
     <div className="border border-[#E7E5E0] rounded-xl bg-[#FAF9F7] p-4 sm:p-5 space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h4 className="font-display text-base font-semibold text-[#141413]">
-            Adjustable Action Form
+            Optional Response Form
           </h4>
           <p className="text-xs text-[#5E5D59] mt-0.5">
-            Attach a customizable RSVP, promo claim, or inquiry form. You can adjust fields anytime.
+            Not every post needs a form. Choose &ldquo;No Form&rdquo; for standard posts, or add
+            your own custom questions and response types.
           </p>
         </div>
 
-        <label className="inline-flex items-center gap-2.5 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={hasForm}
-            onChange={(e) => onToggleHasForm(e.target.checked)}
-            className="w-4 h-4 accent-[#0E7C5B] rounded cursor-pointer"
-          />
-          <span className="text-sm font-medium text-[#141413]">
-            {hasForm ? 'Form Enabled' : 'Add a Form'}
-          </span>
-        </label>
+        <div className="flex items-center gap-1 p-1 bg-white border border-[#E7E5E0] rounded-lg shrink-0">
+          <button
+            type="button"
+            onClick={() => handleToggleMode(false)}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+              !hasForm
+                ? 'bg-[#141413] text-white'
+                : 'text-[#5E5D59] hover:text-[#141413]'
+            }`}
+          >
+            No Form
+          </button>
+          <button
+            type="button"
+            onClick={() => handleToggleMode(true)}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+              hasForm
+                ? 'bg-[#0E7C5B] text-white'
+                : 'text-[#5E5D59] hover:text-[#141413]'
+            }`}
+          >
+            Add Custom Form
+          </button>
+        </div>
       </div>
 
       {hasForm && (
         <div className="space-y-4 pt-3 border-t border-[#E7E5E0]">
-          {/* Quick Presets */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium text-[#5E5D59] mr-1">Start from preset:</span>
-            {FORM_PRESETS.map((preset) => (
-              <button
-                key={preset.name}
-                type="button"
-                onClick={() => onChange(preset.config)}
-                className="px-3 py-1.5 text-xs font-medium rounded-md border border-[#D4D1CA] bg-white text-[#141413] hover:border-[#0E7C5B] hover:text-[#0E7C5B] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-              >
-                {preset.name}
-              </button>
-            ))}
-          </div>
-
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-[#5E5D59] mb-1">
@@ -161,7 +179,7 @@ export function FormBuilder({
                 maxLength={SCHEMA_LIMITS.FORM_TITLE_MAX}
                 value={formConfig.title}
                 onChange={(e) => onChange({ ...formConfig, title: e.target.value })}
-                placeholder="e.g. RSVP for Kigali Launch"
+                placeholder="e.g. Request Table Booking or Feedback"
                 className="w-full px-3 py-2 text-sm bg-white border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
               />
             </div>
@@ -197,9 +215,10 @@ export function FormBuilder({
 
           {/* Field Editor List */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-semibold text-[#141413]">
-                Form Fields ({formConfig.fields.length}/{SCHEMA_LIMITS.FORM_FIELDS_MAX})
+                Your Questions &amp; Response Formats ({formConfig.fields.length}/
+                {SCHEMA_LIMITS.FORM_FIELDS_MAX})
               </span>
               <button
                 type="button"
@@ -208,13 +227,13 @@ export function FormBuilder({
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#0E7C5B] bg-white border border-[#0E7C5B] rounded-lg hover:bg-[#0E7C5B] hover:text-white disabled:opacity-50 transition-colors cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
-                Add Field
+                Add Question
               </button>
             </div>
 
             {formConfig.fields.length === 0 ? (
               <p className="text-xs text-[#5E5D59] py-3 text-center bg-white border border-dashed border-[#D4D1CA] rounded-lg">
-                No fields added yet. Click &ldquo;Add Field&rdquo; or choose a preset above.
+                No questions added yet. Click &ldquo;Add Question&rdquo; to write your own prompt.
               </p>
             ) : (
               <div className="space-y-2.5">
@@ -223,19 +242,25 @@ export function FormBuilder({
                     key={field.id}
                     className="bg-white border border-[#E7E5E0] rounded-lg p-3 space-y-2.5"
                   >
-                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
                       <div className="sm:col-span-5">
+                        <label className="block text-[11px] font-medium text-[#5E5D59] mb-1">
+                          Question {index + 1}
+                        </label>
                         <input
                           type="text"
                           maxLength={SCHEMA_LIMITS.FORM_FIELD_LABEL_MAX}
                           value={field.label}
                           onChange={(e) => updateField(index, { label: e.target.value })}
-                          placeholder="Field label"
+                          placeholder="e.g. Which ticket tier or city?"
                           className="w-full px-2.5 py-1.5 text-sm border border-[#D4D1CA] rounded-md focus:outline-none focus:border-[#0E7C5B]"
                         />
                       </div>
 
                       <div className="sm:col-span-4">
+                        <label className="block text-[11px] font-medium text-[#5E5D59] mb-1">
+                          Preferred Response Type
+                        </label>
                         <select
                           value={field.type}
                           onChange={(e) => {
@@ -244,7 +269,7 @@ export function FormBuilder({
                               type: nextType,
                               options:
                                 nextType === 'select' && field.options.length === 0
-                                  ? ['Option 1', 'Option 2']
+                                  ? ['Choice 1', 'Choice 2']
                                   : field.options,
                             });
                           }}
@@ -258,7 +283,7 @@ export function FormBuilder({
                         </select>
                       </div>
 
-                      <div className="sm:col-span-3 flex items-center justify-between sm:justify-end gap-2">
+                      <div className="sm:col-span-3 flex items-center justify-between sm:justify-end gap-2 pb-1">
                         <label className="inline-flex items-center gap-1.5 text-xs text-[#5E5D59] cursor-pointer">
                           <input
                             type="checkbox"
@@ -274,7 +299,7 @@ export function FormBuilder({
                             type="button"
                             onClick={() => moveField(index, -1)}
                             disabled={index === 0}
-                            aria-label="Move field up"
+                            aria-label="Move question up"
                             className="p-1 text-[#5E5D59] hover:text-[#141413] disabled:opacity-30 cursor-pointer"
                           >
                             <ArrowUp className="w-3.5 h-3.5" />
@@ -283,7 +308,7 @@ export function FormBuilder({
                             type="button"
                             onClick={() => moveField(index, 1)}
                             disabled={index === formConfig.fields.length - 1}
-                            aria-label="Move field down"
+                            aria-label="Move question down"
                             className="p-1 text-[#5E5D59] hover:text-[#141413] disabled:opacity-30 cursor-pointer"
                           >
                             <ArrowDown className="w-3.5 h-3.5" />
@@ -291,7 +316,7 @@ export function FormBuilder({
                           <button
                             type="button"
                             onClick={() => removeField(index)}
-                            aria-label="Remove field"
+                            aria-label="Remove question"
                             className="p-1 text-[#5E5D59] hover:text-[#B91C1C] cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -303,7 +328,7 @@ export function FormBuilder({
                     {field.type === 'select' && (
                       <div>
                         <label className="block text-[11px] font-medium text-[#5E5D59] mb-1">
-                          Dropdown Choices (comma-separated)
+                          Preferred Response Choices (comma-separated)
                         </label>
                         <input
                           type="text"
@@ -316,7 +341,7 @@ export function FormBuilder({
                                 .slice(0, 20),
                             })
                           }
-                          placeholder="Option 1, Option 2, Option 3"
+                          placeholder="e.g. Early Bird, VIP Table, Backstage"
                           className="w-full px-2.5 py-1.5 text-xs border border-[#D4D1CA] rounded-md focus:outline-none focus:border-[#0E7C5B]"
                         />
                       </div>
@@ -325,6 +350,23 @@ export function FormBuilder({
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Optional Starter Templates */}
+          <div className="pt-2 border-t border-[#E7E5E0] flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-medium text-[#5E5D59] mr-1">
+              Optional templates:
+            </span>
+            {FORM_PRESETS.map((preset) => (
+              <button
+                key={preset.name}
+                type="button"
+                onClick={() => onChange(preset.config)}
+                className="px-2.5 py-1 text-[11px] font-medium rounded-md border border-[#D4D1CA] bg-white text-[#5E5D59] hover:border-[#0E7C5B] hover:text-[#0E7C5B] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                {preset.name}
+              </button>
+            ))}
           </div>
         </div>
       )}
