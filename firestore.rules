@@ -1,0 +1,359 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Global Helpers ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // --- Validation Blueprints ---
+
+    function isValidPublicProfile(data) {
+      return data.keys().hasAll([
+          'uid', 'displayName', 'bio', 'location', 'accountType', 'avatarUrl', 'isPublic', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid', 'displayName', 'bio', 'location', 'accountType', 'avatarUrl', 'isPublic', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80
+        && data.bio is string && data.bio.size() <= 500
+        && data.location is string && data.location.size() <= 100
+        && data.accountType in ['creator', 'business', 'community']
+        && data.avatarUrl is string && data.avatarUrl.size() <= 150000
+        && data.isPublic is bool && data.isPublic == true
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUserPrivate(data) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.email is string && data.email.size() <= 200
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidFormConfig(fc) {
+      return fc is map
+        && fc.keys().hasAll(['title', 'description', 'isOpen', 'fields'])
+        && fc.keys().hasOnly(['title', 'description', 'isOpen', 'fields'])
+        && fc.title is string && fc.title.size() <= 120
+        && fc.description is string && fc.description.size() <= 500
+        && fc.isOpen is bool
+        && fc.fields is list && fc.fields.size() <= 15
+        && (
+          fc.fields.size() == 0 || (
+            fc.fields[0] is map
+            && fc.fields[0].keys().hasAll(['id', 'label', 'type', 'required', 'options'])
+            && fc.fields[0].keys().hasOnly(['id', 'label', 'type', 'required', 'options'])
+            && fc.fields[0].id is string && fc.fields[0].id.size() <= 64
+            && fc.fields[0].label is string && fc.fields[0].label.size() <= 100
+            && fc.fields[0].type in ['text', 'email', 'tel', 'textarea', 'select', 'checkbox']
+            && fc.fields[0].required is bool
+            && fc.fields[0].options is list && fc.fields[0].options.size() <= 20
+          )
+        );
+    }
+
+    function isValidPost(data) {
+      return data.keys().hasAll([
+          'id', 'authorId', 'authorName', 'authorAvatar', 'authorLocation',
+          'category', 'mediaFormat', 'visibility', 'title', 'content',
+          'photoUrl', 'videoUrl', 'eventDate', 'eventLocation', 'promoCode',
+          'hasForm', 'formConfig', 'likesCount', 'commentsCount', 'sharesCount',
+          'submissionsCount', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'authorId', 'authorName', 'authorAvatar', 'authorLocation',
+          'category', 'mediaFormat', 'visibility', 'title', 'content',
+          'photoUrl', 'videoUrl', 'eventDate', 'eventLocation', 'promoCode',
+          'hasForm', 'formConfig', 'likesCount', 'commentsCount', 'sharesCount',
+          'submissionsCount', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.authorId)
+        && data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 80
+        && data.authorAvatar is string && data.authorAvatar.size() <= 150000
+        && data.authorLocation is string && data.authorLocation.size() <= 100
+        && data.category in ['announcement', 'event', 'promo']
+        && data.mediaFormat in ['text', 'photo', 'video', 'mix']
+        && data.visibility in ['public', 'archived']
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 140
+        && data.content is string && data.content.size() >= 1 && data.content.size() <= 4000
+        && data.photoUrl is string && data.photoUrl.size() <= 450000
+        && data.videoUrl is string && data.videoUrl.size() <= 2000
+        && data.eventDate is string && data.eventDate.size() <= 60
+        && data.eventLocation is string && data.eventLocation.size() <= 120
+        && data.promoCode is string && data.promoCode.size() <= 40
+        && data.hasForm is bool
+        && isValidFormConfig(data.formConfig)
+        && data.likesCount is int && data.likesCount >= 0
+        && data.commentsCount is int && data.commentsCount >= 0
+        && data.sharesCount is int && data.sharesCount >= 0
+        && data.submissionsCount is int && data.submissionsCount >= 0
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPostLike(data) {
+      return data.keys().hasAll(['userId', 'postId', 'createdAt'])
+        && data.keys().hasOnly(['userId', 'postId', 'createdAt'])
+        && isValidId(data.userId)
+        && isValidId(data.postId)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidPostComment(data) {
+      return data.keys().hasAll(['id', 'postId', 'authorId', 'authorName', 'authorAvatar', 'text', 'createdAt'])
+        && data.keys().hasOnly(['id', 'postId', 'authorId', 'authorName', 'authorAvatar', 'text', 'createdAt'])
+        && isValidId(data.id)
+        && isValidId(data.postId)
+        && isValidId(data.authorId)
+        && data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 80
+        && data.authorAvatar is string && data.authorAvatar.size() <= 150000
+        && data.text is string && data.text.size() >= 1 && data.text.size() <= 1000
+        && data.createdAt is timestamp;
+    }
+
+    function isValidFormSubmission(data) {
+      return data.keys().hasAll(['id', 'postId', 'postAuthorId', 'submitterId', 'submitterName', 'answers', 'createdAt'])
+        && data.keys().hasOnly(['id', 'postId', 'postAuthorId', 'submitterId', 'submitterName', 'answers', 'createdAt'])
+        && isValidId(data.id)
+        && isValidId(data.postId)
+        && isValidId(data.postAuthorId)
+        && isValidId(data.submitterId)
+        && data.submitterName is string && data.submitterName.size() >= 1 && data.submitterName.size() <= 80
+        && data.answers is map && data.answers.size() <= 15
+        && data.createdAt is timestamp;
+    }
+
+    // --- Collection Rules ---
+
+    match /publicProfiles/{userId} {
+      allow get: if isValidId(userId) && (existing().isPublic == true || isOwner(userId));
+      allow list: if existing().isPublic == true || (isSignedIn() && existing().uid == request.auth.uid);
+      allow create: if isVerified()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidPublicProfile(incoming())
+        && incoming().uid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerified()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidPublicProfile(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName', 'bio', 'location', 'accountType', 'avatarUrl', 'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
+    match /userPrivate/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if isSignedIn() && existing().uid == request.auth.uid;
+      allow create: if isVerified()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidUserPrivate(incoming())
+        && incoming().uid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerified()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidUserPrivate(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    match /posts/{postId} {
+      allow get: if isValidId(postId) && (existing().visibility == 'public' || (isSignedIn() && existing().authorId == request.auth.uid));
+      allow list: if existing().visibility == 'public' || (isSignedIn() && existing().authorId == request.auth.uid);
+
+      allow create: if isVerified()
+        && isValidId(postId)
+        && isValidPost(incoming())
+        && incoming().id == postId
+        && incoming().authorId == request.auth.uid
+        && incoming().likesCount == 0
+        && incoming().commentsCount == 0
+        && incoming().sharesCount == 0
+        && incoming().submissionsCount == 0
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isVerified()
+        && isValidId(postId)
+        && isValidPost(incoming())
+        && incoming().id == existing().id
+        && incoming().authorId == existing().authorId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action 1: Author edits post or adjusts form
+          (
+            existing().authorId == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'authorName', 'authorAvatar', 'authorLocation',
+              'category', 'mediaFormat', 'visibility', 'title', 'content',
+              'photoUrl', 'videoUrl', 'eventDate', 'eventLocation', 'promoCode',
+              'hasForm', 'formConfig', 'updatedAt'
+            ])
+          )
+          // Action 2: User toggles like atomically with /likes/{uid}
+          || (
+            existing().visibility == 'public'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['likesCount', 'updatedAt'])
+            && (
+              (incoming().likesCount == existing().likesCount + 1 && existsAfter(/databases/$(database)/documents/posts/$(postId)/likes/$(request.auth.uid)))
+              || (incoming().likesCount == existing().likesCount - 1 && !existsAfter(/databases/$(database)/documents/posts/$(postId)/likes/$(request.auth.uid)))
+            )
+          )
+          // Action 3: User increments share count
+          || (
+            existing().visibility == 'public'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['sharesCount', 'updatedAt'])
+            && incoming().sharesCount == existing().sharesCount + 1
+          )
+          // Action 4: Comment count synchronized on comment create/delete
+          || (
+            existing().visibility == 'public'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['commentsCount', 'updatedAt'])
+            && (incoming().commentsCount == existing().commentsCount + 1 || incoming().commentsCount == existing().commentsCount - 1)
+          )
+          // Action 5: Submission count synchronized on form submit
+          || (
+            existing().visibility == 'public'
+            && existing().hasForm == true
+            && incoming().diff(existing()).affectedKeys().hasOnly(['submissionsCount', 'updatedAt'])
+            && incoming().submissionsCount == existing().submissionsCount + 1
+          )
+        );
+
+      allow delete: if isVerified()
+        && isValidId(postId)
+        && existing().authorId == request.auth.uid;
+
+      // Subcollection: Likes
+      match /likes/{userId} {
+        allow get: if isValidId(postId) && isValidId(userId) && isOwner(userId);
+        allow list: if isSignedIn() && existing().userId == request.auth.uid;
+        allow create: if isVerified()
+          && isValidId(postId)
+          && isValidId(userId)
+          && isOwner(userId)
+          && isValidPostLike(incoming())
+          && incoming().userId == request.auth.uid
+          && incoming().postId == postId
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/posts/$(postId))
+          && getAfter(/databases/$(database)/documents/posts/$(postId)).data.likesCount == get(/databases/$(database)/documents/posts/$(postId)).data.likesCount + 1;
+        allow update: if false;
+        allow delete: if isVerified()
+          && isValidId(postId)
+          && isValidId(userId)
+          && isOwner(userId)
+          && exists(/databases/$(database)/documents/posts/$(postId))
+          && getAfter(/databases/$(database)/documents/posts/$(postId)).data.likesCount == get(/databases/$(database)/documents/posts/$(postId)).data.likesCount - 1;
+      }
+
+      // Subcollection: Comments
+      match /comments/{commentId} {
+        allow get: if isValidId(postId)
+          && isValidId(commentId)
+          && exists(/databases/$(database)/documents/posts/$(postId))
+          && (
+            get(/databases/$(database)/documents/posts/$(postId)).data.visibility == 'public'
+            || (isSignedIn() && get(/databases/$(database)/documents/posts/$(postId)).data.authorId == request.auth.uid)
+          );
+        allow list: if isValidId(postId)
+          && existing().postId == postId;
+        allow create: if isVerified()
+          && isValidId(postId)
+          && isValidId(commentId)
+          && isValidPostComment(incoming())
+          && incoming().id == commentId
+          && incoming().postId == postId
+          && incoming().authorId == request.auth.uid
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/posts/$(postId))
+          && get(/databases/$(database)/documents/posts/$(postId)).data.visibility == 'public'
+          && getAfter(/databases/$(database)/documents/posts/$(postId)).data.commentsCount == get(/databases/$(database)/documents/posts/$(postId)).data.commentsCount + 1;
+        allow update: if false;
+        allow delete: if isVerified()
+          && isValidId(postId)
+          && isValidId(commentId)
+          && exists(/databases/$(database)/documents/posts/$(postId))
+          && (
+            existing().authorId == request.auth.uid
+            || get(/databases/$(database)/documents/posts/$(postId)).data.authorId == request.auth.uid
+          )
+          && getAfter(/databases/$(database)/documents/posts/$(postId)).data.commentsCount == get(/databases/$(database)/documents/posts/$(postId)).data.commentsCount - 1;
+      }
+
+      // Subcollection: Form Submissions
+      match /submissions/{submissionId} {
+        allow get: if isSignedIn()
+          && isValidId(postId)
+          && isValidId(submissionId)
+          && (existing().postAuthorId == request.auth.uid || existing().submitterId == request.auth.uid);
+        allow list: if isSignedIn()
+          && (existing().postAuthorId == request.auth.uid || existing().submitterId == request.auth.uid);
+        allow create: if isVerified()
+          && isValidId(postId)
+          && isValidId(submissionId)
+          && isValidFormSubmission(incoming())
+          && incoming().id == submissionId
+          && incoming().postId == postId
+          && incoming().submitterId == request.auth.uid
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/posts/$(postId))
+          && get(/databases/$(database)/documents/posts/$(postId)).data.visibility == 'public'
+          && get(/databases/$(database)/documents/posts/$(postId)).data.hasForm == true
+          && get(/databases/$(database)/documents/posts/$(postId)).data.formConfig.isOpen == true
+          && incoming().postAuthorId == get(/databases/$(database)/documents/posts/$(postId)).data.authorId
+          && getAfter(/databases/$(database)/documents/posts/$(postId)).data.submissionsCount == get(/databases/$(database)/documents/posts/$(postId)).data.submissionsCount + 1;
+        allow update: if false;
+        allow delete: if isVerified()
+          && isValidId(postId)
+          && isValidId(submissionId)
+          && (existing().postAuthorId == request.auth.uid || existing().submitterId == request.auth.uid);
+      }
+    }
+  }
+}

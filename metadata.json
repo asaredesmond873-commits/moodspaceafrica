@@ -1,0 +1,8 @@
+{
+  "name": "MoodSpace Africa",
+  "description": "A welcoming African community platform for creators and businesses to share announcements, events, and promos in text, photo, video, or mixed formats with adjustable forms and engagement dashboards.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

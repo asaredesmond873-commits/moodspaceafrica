@@ -1,0 +1,379 @@
+{
+  "entities": {
+    "PublicProfile": {
+      "title": "PublicProfile",
+      "description": "Publicly visible creator or business profile without PII.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128,
+          "description": "Firebase Auth UID of the profile owner."
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Creator or business display name."
+        },
+        "bio": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Short biography or business overview."
+        },
+        "location": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "City and country across Africa."
+        },
+        "accountType": {
+          "type": "string",
+          "enum": ["creator", "business", "community"],
+          "description": "Role of the user on MoodSpace Africa."
+        },
+        "avatarUrl": {
+          "type": "string",
+          "maxLength": 150000,
+          "description": "Avatar image URL or compressed image data URI."
+        },
+        "isPublic": {
+          "type": "boolean",
+          "description": "Indicates the profile is discoverable."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of profile creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": ["uid", "displayName", "bio", "location", "accountType", "avatarUrl", "isPublic", "createdAt", "updatedAt"]
+    },
+    "UserPrivate": {
+      "title": "UserPrivate",
+      "description": "Owner-only private account information containing PII such as email.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128,
+          "description": "Firebase Auth UID."
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Authenticated user email address."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of update."
+        }
+      },
+      "required": ["uid", "email", "createdAt", "updatedAt"]
+    },
+    "Post": {
+      "title": "Post",
+      "description": "Community announcement, event, or promo in text, photo, video, or mixed format with optional adjustable form.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128,
+          "description": "Unique post identifier."
+        },
+        "authorId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128,
+          "description": "UID of the creator or business."
+        },
+        "authorName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Snapshot of author display name."
+        },
+        "authorAvatar": {
+          "type": "string",
+          "maxLength": 150000,
+          "description": "Snapshot of author avatar URL."
+        },
+        "authorLocation": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "City and country of the author."
+        },
+        "category": {
+          "type": "string",
+          "enum": ["announcement", "event", "promo"],
+          "description": "Primary post category."
+        },
+        "mediaFormat": {
+          "type": "string",
+          "enum": ["text", "photo", "video", "mix"],
+          "description": "Media format used in the post."
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["public", "archived"],
+          "description": "Discoverability visibility status."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 140,
+          "description": "Headline for the post."
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000,
+          "description": "Main body text of the post."
+        },
+        "photoUrl": {
+          "type": "string",
+          "maxLength": 450000,
+          "description": "Optional photo URL or compressed JPEG data URI."
+        },
+        "videoUrl": {
+          "type": "string",
+          "maxLength": 2000,
+          "description": "Optional video URL or embed URL."
+        },
+        "eventDate": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "Optional date/time string for events."
+        },
+        "eventLocation": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Optional venue or online location for events."
+        },
+        "promoCode": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Optional promotional code or offer tag."
+        },
+        "hasForm": {
+          "type": "boolean",
+          "description": "Whether an adjustable creator form is attached."
+        },
+        "formConfig": {
+          "type": "object",
+          "description": "Adjustable form definition with title, description, isOpen, and fields list."
+        },
+        "likesCount": {
+          "type": "integer",
+          "description": "Atomic count of likes."
+        },
+        "commentsCount": {
+          "type": "integer",
+          "description": "Atomic count of comments."
+        },
+        "sharesCount": {
+          "type": "integer",
+          "description": "Atomic count of shares."
+        },
+        "submissionsCount": {
+          "type": "integer",
+          "description": "Atomic count of form submissions."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": [
+        "id",
+        "authorId",
+        "authorName",
+        "authorAvatar",
+        "authorLocation",
+        "category",
+        "mediaFormat",
+        "visibility",
+        "title",
+        "content",
+        "photoUrl",
+        "videoUrl",
+        "eventDate",
+        "eventLocation",
+        "promoCode",
+        "hasForm",
+        "formConfig",
+        "likesCount",
+        "commentsCount",
+        "sharesCount",
+        "submissionsCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "PostLike": {
+      "title": "PostLike",
+      "description": "Represents a single user like on a post.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128,
+          "description": "UID of the user who liked the post."
+        },
+        "postId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128,
+          "description": "ID of the liked post."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when liked."
+        }
+      },
+      "required": ["userId", "postId", "createdAt"]
+    },
+    "PostComment": {
+      "title": "PostComment",
+      "description": "A user comment on a post.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128,
+          "description": "Unique comment ID."
+        },
+        "postId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128,
+          "description": "Parent post ID."
+        },
+        "authorId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128,
+          "description": "UID of the commenter."
+        },
+        "authorName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Display name of the commenter."
+        },
+        "authorAvatar": {
+          "type": "string",
+          "maxLength": 150000,
+          "description": "Avatar URL of the commenter."
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000,
+          "description": "Comment body text."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of comment."
+        }
+      },
+      "required": ["id", "postId", "authorId", "authorName", "authorAvatar", "text", "createdAt"]
+    },
+    "FormSubmission": {
+      "title": "FormSubmission",
+      "description": "A response submitted to a post's adjustable form.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128,
+          "description": "Unique submission ID."
+        },
+        "postId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128,
+          "description": "Parent post ID."
+        },
+        "postAuthorId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128,
+          "description": "UID of the post creator authorized to view responses."
+        },
+        "submitterId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128,
+          "description": "UID of the person submitting the form."
+        },
+        "submitterName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Display name of the submitter."
+        },
+        "answers": {
+          "type": "object",
+          "description": "Key-value map of form field IDs to submitted values."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of submission."
+        }
+      },
+      "required": ["id", "postId", "postAuthorId", "submitterId", "submitterName", "answers", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/publicProfiles/{userId}": {
+      "schema": { "$ref": "#/entities/PublicProfile" },
+      "description": "Publicly discoverable creator and business profile information without PII."
+    },
+    "/userPrivate/{userId}": {
+      "schema": { "$ref": "#/entities/UserPrivate" },
+      "description": "Private user account PII restricted strictly to the owner."
+    },
+    "/posts/{postId}": {
+      "schema": { "$ref": "#/entities/Post" },
+      "description": "Community announcements, events, and promos with optional adjustable form configurations."
+    },
+    "/posts/{postId}/likes/{userId}": {
+      "schema": { "$ref": "#/entities/PostLike" },
+      "description": "Per-user like records synchronized atomically with post likesCount."
+    },
+    "/posts/{postId}/comments/{commentId}": {
+      "schema": { "$ref": "#/entities/PostComment" },
+      "description": "Comments on a community post."
+    },
+    "/posts/{postId}/submissions/{submissionId}": {
+      "schema": { "$ref": "#/entities/FormSubmission" },
+      "description": "Form submissions visible only to the post creator and the submitter."
+    }
+  }
+}
