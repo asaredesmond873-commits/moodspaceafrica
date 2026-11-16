@@ -3,8 +3,12 @@ import type { FormSubmission, Post } from '../types';
 
 export const STUDIO_PRESET_IMAGES = [
   {
-    label: 'Lagos Courtyard Gathering',
-    url: '/src/assets/images/hero_africa_community_1794838619763.jpg',
+    label: 'Tidal Rave Ghana',
+    url: '/src/assets/images/tidal_rave_ghana_1794859059932.jpg',
+  },
+  {
+    label: 'Obala Coffee & PayFlow',
+    url: '/src/assets/images/african_company_promo_1794859060543.jpg',
   },
   {
     label: 'Acoustic Music Evening',
@@ -17,6 +21,25 @@ export const STUDIO_PRESET_IMAGES = [
   {
     label: 'Nairobi Founders Table',
     url: '/src/assets/images/showcase_tech_summit_1794838620227.jpg',
+  },
+  {
+    label: 'Africa Tech Festival',
+    url: '/assets/aistudio/99bc11007403730_dbb0dfe7.jpg',
+  },
+];
+
+export const STUDIO_PRESET_VIDEOS = [
+  {
+    label: 'Tidal Rave Ghana Reel',
+    url: '/assets/videos/tidal_rave_aftermovie.mp4',
+  },
+  {
+    label: 'African Brand Promos Reel',
+    url: '/assets/videos/africa_brand_promos.mp4',
+  },
+  {
+    label: 'Africa Tech Highlights',
+    url: '/assets/videos/africa_tech_highlights.mp4',
   },
 ];
 
@@ -100,7 +123,6 @@ export async function compressImageFile(
           dataUrl = canvas.toDataURL('image/jpeg', quality);
         }
         if (dataUrl.length > maxBytes) {
-          // Scale down once more for very dense images
           const scale = 0.65;
           canvas.width = Math.max(320, Math.round(width * scale));
           canvas.height = Math.max(240, Math.round(height * scale));
@@ -143,7 +165,11 @@ export function parseVideoUrl(rawUrl: string): ParsedVideo {
     };
   }
 
-  if (/^https?:\/\/.+\.(mp4|webm|ogg)(\?.*)?$/i.test(url) || url.startsWith('https://')) {
+  if (
+    /^\/assets\/.+\.(mp4|webm|ogg)(\?.*)?$/i.test(url) ||
+    /^https?:\/\/.+\.(mp4|webm|ogg)(\?.*)?$/i.test(url) ||
+    url.startsWith('https://')
+  ) {
     return { kind: 'direct', srcUrl: url };
   }
 

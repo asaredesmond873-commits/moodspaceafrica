@@ -1,7 +1,7 @@
 import { Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { publishStarterShowcasePosts } from '../services/firestoreService';
+import { FEATURED_AFRICAN_FEED, publishStarterShowcasePosts } from '../services/firestoreService';
 import type { MediaFormat, Post, PostCategory } from '../types';
 import { PostCard } from './PostCard';
 
@@ -119,8 +119,8 @@ export function DiscoverFeed({
           <div className="lg:col-span-6">
             <div className="h-64 sm:h-80 lg:h-full rounded-xl overflow-hidden border border-[#E7E5E0] bg-[#FAF9F7]">
               <img
-                src="/src/assets/images/hero_africa_community_1794838619763.jpg"
-                alt="Contemporary African creators and entrepreneurs gathered at an outdoor community market"
+                src="/assets/aistudio/99bc11007403730_dbb0dfe7.jpg"
+                alt="Panelists and audience at the Africa Tech Festival discussing Africa's digital future"
                 referrerPolicy="no-referrer"
                 className="w-full h-full object-cover"
               />
@@ -185,6 +185,23 @@ export function DiscoverFeed({
         </div>
       </section>
 
+      {/* Quick Showcase Banner when signed in and feed has fewer than 4 posts */}
+      {!loading && posts.length > 0 && posts.length < 4 && (
+        <section className="max-w-3xl mx-auto flex flex-wrap items-center justify-between gap-3 bg-white border border-[#E7E5E0] rounded-xl px-4 py-3">
+          <p className="text-xs text-[#5E5D59]">
+            Want more African events (Tidal Rave, Africa Tech Festival) and brand promos in your feed?
+          </p>
+          <button
+            type="button"
+            disabled={seeding}
+            onClick={handleSeedShowcase}
+            className="px-3.5 py-1.5 text-xs font-semibold text-[#0E7C5B] border border-[#0E7C5B] rounded-lg hover:bg-[#0E7C5B] hover:text-white disabled:opacity-60 whitespace-nowrap cursor-pointer"
+          >
+            {seeding ? 'Publishing...' : 'Add Featured Events & Promos'}
+          </button>
+        </section>
+      )}
+
       {/* Feed Stream */}
       <section className="max-w-3xl mx-auto space-y-6">
         {loading ? (
@@ -206,50 +223,186 @@ export function DiscoverFeed({
               </div>
             ))}
           </div>
+        ) : filteredPosts.length === 0 && posts.length === 0 ? (
+          <div className="space-y-6">
+            <div className="bg-white border border-[#E7E5E0] rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <h2 className="font-display text-xl font-bold text-[#141413]">
+                  Featured African Events &amp; Brand Promos
+                </h2>
+                <p className="text-sm text-[#5E5D59]">
+                  {user
+                    ? 'Publish these curated events and promos directly to the live feed or create your own.'
+                    : 'Watch highlights from Tidal Rave Ghana, Africa Tech Festival, and African brand promos. Sign in with Google to like, comment, or submit forms.'}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  disabled={seeding}
+                  onClick={handleSeedShowcase}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-[#0E7C5B] rounded-lg hover:bg-[#095E44] disabled:opacity-60 whitespace-nowrap cursor-pointer"
+                >
+                  {seeding
+                    ? 'Publishing...'
+                    : user
+                      ? 'Publish Featured Feed'
+                      : 'Sign In to Interact'}
+                </button>
+              </div>
+            </div>
+
+            {(() => {
+              const q = searchQuery.trim().toLowerCase();
+              const filteredFeatured = FEATURED_AFRICAN_FEED.filter(
+                (item) =>
+                  (categoryFilter === 'all' || item.category === categoryFilter) &&
+                  (formatFilter === 'all' || item.mediaFormat === formatFilter) &&
+                  (!q ||
+                    item.title.toLowerCase().includes(q) ||
+                    item.content.toLowerCase().includes(q) ||
+                    item.brandLabel.toLowerCase().includes(q) ||
+                    item.brandCity.toLowerCase().includes(q) ||
+                    item.eventLocation.toLowerCase().includes(q))
+              );
+
+              if (filteredFeatured.length === 0) {
+                return (
+                  <div className="bg-white border border-[#E7E5E0] rounded-2xl p-8 text-center space-y-4">
+                    <h3 className="font-display text-xl font-bold text-[#141413]">
+                      No matching featured posts
+                    </h3>
+                    <p className="text-sm text-[#5E5D59] max-w-md mx-auto">
+                      Try clearing your search or switching category and media filters.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCategoryFilter('all');
+                        setFormatFilter('all');
+                        setSearchQuery('');
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-[#141413] border border-[#D4D1CA] rounded-lg hover:border-[#141413] cursor-pointer"
+                    >
+                      Reset Filters
+                    </button>
+                  </div>
+                );
+              }
+
+              return filteredFeatured.map((item) => (
+                <article
+                  key={item.title}
+                  className="bg-white border border-[#E7E5E0] rounded-2xl p-5 sm:p-6 space-y-4"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-[#141413]">{item.brandLabel}</p>
+                      <p className="text-xs text-[#5E5D59]">
+                        <span className="font-medium text-[#0E7C5B] capitalize">
+                          {item.category}
+                        </span>{' '}
+                        · <span className="capitalize">{item.mediaFormat}</span> · {item.brandCity} ·
+                        Featured Preview
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h3 className="font-display text-xl sm:text-2xl font-bold text-[#141413] leading-snug text-balance">
+                      {item.title}
+                    </h3>
+                    <p className="text-[15px] text-[#353431] leading-relaxed">{item.content}</p>
+                  </div>
+
+                  {(item.eventDate || item.eventLocation || item.promoCode) && (
+                    <div className="pt-3 border-t border-[#F0EEE9] flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-[#353431]">
+                      {item.eventDate && <span className="font-medium">{item.eventDate}</span>}
+                      {item.eventLocation && <span>{item.eventLocation}</span>}
+                      {item.promoCode && (
+                        <span>
+                          Promo Code:{' '}
+                          <code className="font-mono font-semibold bg-[#FAF9F7] px-2 py-0.5 rounded border border-[#E7E5E0]">
+                            {item.promoCode}
+                          </code>
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {item.videoUrl ? (
+                    <div className="rounded-xl overflow-hidden border border-[#E7E5E0] bg-[#141413]">
+                      <video
+                        controls
+                        playsInline
+                        preload="metadata"
+                        poster={item.photoUrl || undefined}
+                        src={item.videoUrl}
+                        className="w-full max-h-[420px]"
+                      />
+                    </div>
+                  ) : (
+                    item.photoUrl && (
+                      <div className="rounded-xl overflow-hidden border border-[#E7E5E0] bg-[#FAF9F7]">
+                        <img
+                          src={item.photoUrl}
+                          alt={item.title}
+                          referrerPolicy="no-referrer"
+                          className="w-full max-h-[420px] object-cover"
+                        />
+                      </div>
+                    )
+                  )}
+
+                  <div className="pt-3 border-t border-[#E7E5E0] flex flex-wrap items-center justify-between gap-3">
+                    <span className="text-xs text-[#5E5D59]">
+                      {user
+                        ? 'Publish the featured feed to like, comment, share, and submit forms'
+                        : 'Sign in to like, comment, share, and submit forms'}
+                    </span>
+                    {user ? (
+                      <button
+                        type="button"
+                        disabled={seeding}
+                        onClick={handleSeedShowcase}
+                        className="px-4 py-2 text-xs font-semibold text-white bg-[#0E7C5B] rounded-lg hover:bg-[#095E44] disabled:opacity-60 cursor-pointer whitespace-nowrap"
+                      >
+                        {seeding ? 'Publishing...' : 'Publish to Live Feed'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => void signInWithGoogle()}
+                        className="px-4 py-2 text-xs font-semibold text-white bg-[#141413] rounded-lg hover:bg-[#2C2C2A] cursor-pointer whitespace-nowrap"
+                      >
+                        Sign In with Google
+                      </button>
+                    )}
+                  </div>
+                </article>
+              ));
+            })()}
+          </div>
         ) : filteredPosts.length === 0 ? (
           <div className="bg-white border border-[#E7E5E0] rounded-2xl p-8 sm:p-10 text-center space-y-4">
             <h2 className="font-display text-xl font-bold text-[#141413]">
-              {posts.length === 0
-                ? 'Welcome to MoodSpace Africa'
-                : 'No matching posts found'}
+              No matching posts found
             </h2>
             <p className="text-sm text-[#5E5D59] max-w-md mx-auto">
-              {posts.length === 0
-                ? 'Start the community feed by publishing your first announcement, event, or promo—or load a starter showcase of African events and offers.'
-                : 'Try clearing your search or switching category and media filters.'}
+              Try clearing your search or switching category and media filters.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-              {posts.length === 0 ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={user ? onOpenComposer : () => void signInWithGoogle()}
-                    className="px-4 py-2 text-sm font-semibold text-white bg-[#0E7C5B] rounded-lg hover:bg-[#095E44] cursor-pointer"
-                  >
-                    {user ? 'Create First Post' : 'Sign In to Post'}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={seeding}
-                    onClick={handleSeedShowcase}
-                    className="px-4 py-2 text-sm font-medium text-[#141413] border border-[#D4D1CA] rounded-lg hover:border-[#141413] disabled:opacity-60 cursor-pointer"
-                  >
-                    {seeding ? 'Publishing Showcase...' : 'Load Starter Community Showcase'}
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCategoryFilter('all');
-                    setFormatFilter('all');
-                    setSearchQuery('');
-                  }}
-                  className="px-4 py-2 text-sm font-medium text-[#141413] border border-[#D4D1CA] rounded-lg hover:border-[#141413] cursor-pointer"
-                >
-                  Reset Filters
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setCategoryFilter('all');
+                  setFormatFilter('all');
+                  setSearchQuery('');
+                }}
+                className="px-4 py-2 text-sm font-medium text-[#141413] border border-[#D4D1CA] rounded-lg hover:border-[#141413] cursor-pointer"
+              >
+                Reset Filters
+              </button>
             </div>
           </div>
         ) : (

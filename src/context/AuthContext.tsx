@@ -13,7 +13,7 @@ import {
   type ReactNode,
 } from 'react';
 import { auth, googleProvider } from '../firebase';
-import { ensureUserProfile } from '../services/firestoreService';
+import { ensureUserProfile, seedShowcaseIfFeedEmpty } from '../services/firestoreService';
 import type { PublicProfile } from '../types';
 
 interface AuthContextValue {
@@ -45,6 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const loaded = await ensureUserProfile(nextUser);
           setProfile(loaded);
           setAuthError(null);
+          void seedShowcaseIfFeedEmpty(loaded);
         } catch (err) {
           setAuthError(err instanceof Error ? err.message : 'Unable to load your profile.');
         }
@@ -63,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const cred = await signInWithPopup(auth, googleProvider);
       const loaded = await ensureUserProfile(cred.user);
       setProfile(loaded);
+      void seedShowcaseIfFeedEmpty(loaded);
       return loaded;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Sign-in was cancelled or failed.';

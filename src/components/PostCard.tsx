@@ -282,8 +282,8 @@ export function PostCard({
         </div>
       )}
 
-      {/* Photo Media */}
-      {post.photoUrl && (
+      {/* Photo Media (shown for photo or mix posts, or as fallback when no valid video) */}
+      {post.photoUrl && (post.mediaFormat !== 'video' || !parsedVideo || parsedVideo.kind === 'invalid') && (
         <div className="mt-4 rounded-xl overflow-hidden border border-[#E7E5E0] bg-[#FAF9F7]">
           {!imgError ? (
             <img
@@ -310,6 +310,7 @@ export function PostCard({
               controls
               playsInline
               preload="metadata"
+              poster={post.photoUrl || undefined}
               src={parsedVideo.srcUrl}
               className="w-full max-h-[420px]"
             />

@@ -10,7 +10,7 @@ import {
   type PostVisibility,
   SCHEMA_LIMITS,
 } from '../types';
-import { compressImageFile, STUDIO_PRESET_IMAGES } from '../utils/media';
+import { compressImageFile, STUDIO_PRESET_IMAGES, STUDIO_PRESET_VIDEOS } from '../utils/media';
 import { FormBuilder } from './FormBuilder';
 
 interface PostComposerModalProps {
@@ -416,18 +416,35 @@ export function PostComposerModal({
 
           {/* Video Input */}
           {showVideoField && (
-            <div className="p-4 border border-[#E7E5E0] rounded-xl bg-[#FAF9F7] space-y-2">
+            <div className="p-4 border border-[#E7E5E0] rounded-xl bg-[#FAF9F7] space-y-3">
               <label className="block text-xs font-semibold text-[#141413]">
-                Video URL (YouTube, Vimeo, or direct MP4/WebM)
+                Video URL (YouTube, Vimeo, direct MP4/WebM, or reel preset)
               </label>
               <input
-                type="url"
+                type="text"
                 maxLength={SCHEMA_LIMITS.VIDEO_URL_MAX}
                 value={videoUrl}
                 onChange={(e) => setVideoUrl(e.target.value)}
-                placeholder="https://www.youtube.com/watch?v=... or https://.../clip.mp4"
+                placeholder="https://www.youtube.com/watch?v=... or /assets/videos/tidal_rave_aftermovie.mp4"
                 className="w-full px-3 py-2 text-sm bg-white border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
               />
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-medium text-[#5E5D59]">Quick reels:</span>
+                {STUDIO_PRESET_VIDEOS.map((vid) => (
+                  <button
+                    key={vid.url}
+                    type="button"
+                    onClick={() => setVideoUrl(vid.url)}
+                    className={`px-2.5 py-1 text-[11px] font-medium rounded-md border cursor-pointer ${
+                      videoUrl === vid.url
+                        ? 'border-[#0E7C5B] bg-[#0E7C5B] text-white'
+                        : 'border-[#D4D1CA] bg-white text-[#141413] hover:border-[#0E7C5B]'
+                    }`}
+                  >
+                    {vid.label}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
