@@ -3,8 +3,13 @@ import { Component, lazy, Suspense, useEffect, useState, type ReactNode } from '
 import { DiscoverFeed } from './components/DiscoverFeed';
 import { TopBar, type NavSection } from './components/TopBar';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { subscribePublicPosts } from './services/firestoreService';
-import type { Post, PostCategory } from './types';
+import {
+  subscribePublicPosts,
+  subscribeSavedPostIds,
+  subscribeVerifiedProfiles,
+  toggleSavedPost,
+} from './services/firestoreService';
+import type { Post, PostCategory, VerifiedBadgeInfo } from './types';
 
 const DashboardView = lazy(() =>
   import('./components/DashboardView').then((m) => ({ default: m.DashboardView }))
@@ -16,7 +21,7 @@ const FormFillModal = lazy(() =>
   import('./components/FormFillModal').then((m) => ({ default: m.FormFillModal }))
 );
 
-const FEED_CACHE_KEY = 'moodspace_public_feed_cache_v2';
+const FEED_CACHE_KEY = 'moodspace_public_feed_cache_v3';
 
 interface CachedPost extends Omit<Post, 'createdAt' | 'updatedAt'> {
   createdAtSec: number | null;
@@ -100,6 +105,8 @@ function MoodSpaceShell() {
   const [activeSection, setActiveSection] = useState<NavSection>('discover');
   const [posts, setPosts] = useState<Post[]>(() => readCachedFeed());
   const [feedLoading, setFeedLoading] = useState(() => posts.length === 0);
+  const [verifiedBadges, setVerifiedBadges] = useState<Record<string, VerifiedBadgeInfo>>({});
+  const [savedPostIds, setSavedPostIds] = useState<Set<string>>(() => new Set());
   const [composerOpen, setComposerOpen] = useState(false);
   const [editingPost, setEditingPost] = useState<Post | null>(null);
   const [formPost, setFormPost] = useState<Post | null>(null);
@@ -115,7 +122,7 @@ function MoodSpaceShell() {
   }, []);
 
   useEffect(() => {
-    const unsub = subscribePublicPosts(
+    const unsubPosts = subscribePublicPosts(
       (list) => {
         setPosts(list);
         writeCachedFeed(list);
@@ -125,8 +132,21 @@ function MoodSpaceShell() {
         setFeedLoading(false);
       }
     );
-    return () => unsub();
+    const unsubBadges = subscribeVerifiedProfiles(setVerifiedBadges, () => {});
+    return () => {
+      unsubPosts();
+      unsubBadges();
+    };
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setSavedPostIds(new Set());
+      return;
+    }
+    const unsub = subscribeSavedPostIds(user.uid, setSavedPostIds, () => {});
+    return () => unsub();
+  }, [user]);
 
   useEffect(() => {
     if (!highlightedPostId || feedLoading) return;
@@ -155,6 +175,22 @@ function MoodSpaceShell() {
   const handleEditPost = (post: Post) => {
     setEditingPost(post);
     setComposerOpen(true);
+  };
+
+  const handleToggleSaved = async (postId: string) => {
+    let uid = user?.uid;
+    if (!uid) {
+      const signed = await signInWithGoogle();
+      if (!signed) return;
+      uid = signed.uid;
+    }
+    const currentlySaved = savedPostIds.has(postId);
+    try {
+      await toggleSavedPost(postId, uid, currentlySaved);
+      showToast(currentlySaved ? 'Removed from saved posts' : 'Saved to your bookmarks');
+    } catch {
+      showToast('Could not update saved bookmark.');
+    }
   };
 
   const initialCategory: 'all' | PostCategory =
@@ -202,10 +238,14 @@ function MoodSpaceShell() {
           <DiscoverFeed
             posts={posts}
             loading={feedLoading}
+            verifiedBadges={verifiedBadges}
+            savedPostIds={savedPostIds}
             initialCategory={initialCategory}
             highlightedPostId={highlightedPostId}
             onOpenComposer={() => void handleOpenCreate()}
+            onOpenDashboard={() => setActiveSection('dashboard')}
             onOpenForm={(post) => setFormPost(post)}
+            onToggleSaved={(postId) => void handleToggleSaved(postId)}
             onNotify={showToast}
           />
         )}
@@ -215,7 +255,7 @@ function MoodSpaceShell() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#5E5D59]">
           <p className="font-medium text-[#141413]">MoodSpace Africa</p>
           <p>
-            Announcements, events, promos, and community forms across Africa.
+            Announcements, events, promos, and community forms across Ghana &amp; Africa.
           </p>
         </div>
       </footer>

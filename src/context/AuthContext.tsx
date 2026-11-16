@@ -4,6 +4,7 @@ import {
   signOut,
   type User,
 } from 'firebase/auth';
+import { doc, onSnapshot } from 'firebase/firestore';
 import {
   createContext,
   useCallback,
@@ -12,7 +13,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { auth, googleProvider } from '../firebase';
+import { auth, db, googleProvider } from '../firebase';
 import { cleanupAccidentalAutoSeededPosts, ensureUserProfile } from '../services/firestoreService';
 import type { PublicProfile } from '../types';
 
@@ -38,7 +39,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (nextUser) => {
+    let unsubProfile: (() => void) | null = null;
+
+    const unsubAuth = onAuthStateChanged(auth, async (nextUser) => {
+      if (unsubProfile) {
+        unsubProfile();
+        unsubProfile = null;
+      }
+
       setUser(nextUser);
       if (nextUser) {
         try {
@@ -46,6 +54,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setProfile(loaded);
           setAuthError(null);
           void cleanupAccidentalAutoSeededPosts(loaded.uid).catch(() => {});
+
+          unsubProfile = onSnapshot(doc(db, 'publicProfiles', nextUser.uid), (snap) => {
+            if (snap.exists()) {
+              setProfile(snap.data() as PublicProfile);
+            }
+          });
         } catch (err) {
           setAuthError(err instanceof Error ? err.message : 'Unable to load your profile.');
         }
@@ -54,7 +68,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       setAuthReady(true);
     });
-    return () => unsub();
+
+    return () => {
+      if (unsubProfile) unsubProfile();
+      unsubAuth();
+    };
   }, []);
 
   const signInWithGoogle = useCallback(async () => {

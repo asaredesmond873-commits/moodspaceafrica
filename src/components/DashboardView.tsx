@@ -1,7 +1,11 @@
 import {
+  BadgeCheck,
   BarChart3,
+  CheckCircle2,
   ClipboardList,
+  Clock,
   Download,
+  ExternalLink,
   Eye,
   EyeOff,
   FileText,
@@ -10,8 +14,10 @@ import {
   MessageSquare,
   Pencil,
   Plus,
+  ShieldCheck,
   Trash2,
   UserCheck,
+  XCircle,
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -20,6 +26,10 @@ import {
   deletePost,
   deletePostComment,
   fetchPostSubmissions,
+  reviewVerificationRequest,
+  submitVerificationRequest,
+  subscribeAllVerificationRequests,
+  subscribeMyVerificationRequest,
   subscribePostComments,
   subscribeUserPosts,
   togglePostFormOpen,
@@ -28,11 +38,16 @@ import {
 } from '../services/firestoreService';
 import {
   type AccountType,
+  ADMIN_EMAIL,
   AFRICAN_CITIES,
   type FormSubmission,
   type Post,
   type PostComment,
   SCHEMA_LIMITS,
+  type VerificationCategory,
+  type VerificationIdType,
+  type VerificationRequest,
+  type VerificationStatus,
 } from '../types';
 import {
   compressImageFile,
@@ -41,13 +56,33 @@ import {
   formatTimestamp,
 } from '../utils/media';
 
-type DashboardTab = 'overview' | 'posts' | 'responses' | 'profile';
+type DashboardTab =
+  | 'overview'
+  | 'posts'
+  | 'responses'
+  | 'verification'
+  | 'approvals'
+  | 'profile';
 
 interface DashboardViewProps {
   onCreatePost: () => void;
   onEditPost: (post: Post) => void;
   onNotify: (message: string) => void;
 }
+
+const DEFAULT_BADGE_LABELS: Record<VerificationCategory, string> = {
+  creator: 'Verified Creator',
+  business: 'Verified Business',
+  organizer: 'Verified Organizer',
+  media: 'Verified Media',
+};
+
+const ID_TYPE_LABELS: Record<VerificationIdType, string> = {
+  ghana_card: 'Ghana Card / National ID (Masked)',
+  business_reg: 'Business Registration (RGD Ghana)',
+  social_handle: 'Official Social Media Handle',
+  website_press: 'Official Website / Press Feature',
+};
 
 export function DashboardView({
   onCreatePost,
@@ -59,6 +94,8 @@ export function DashboardView({
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
   const [myPosts, setMyPosts] = useState<Post[]>([]);
   const [postsLoading, setPostsLoading] = useState(true);
+
+  const isAdmin = Boolean(user?.email && user.email === ADMIN_EMAIL);
 
   // Content & interaction moderation state
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -80,6 +117,25 @@ export function DashboardView({
   const [savingProfile, setSavingProfile] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
+  // Verification submission state
+  const [myVerification, setMyVerification] = useState<VerificationRequest | null>(null);
+  const [legalOrBrandName, setLegalOrBrandName] = useState('');
+  const [verCategory, setVerCategory] = useState<VerificationCategory>('creator');
+  const [idType, setIdType] = useState<VerificationIdType>('ghana_card');
+  const [idReference, setIdReference] = useState('');
+  const [proofLink, setProofLink] = useState('');
+  const [proofImageUrl, setProofImageUrl] = useState('');
+  const [verNote, setVerNote] = useState('');
+  const [uploadingProof, setUploadingProof] = useState(false);
+  const [submittingVerification, setSubmittingVerification] = useState(false);
+
+  // Admin approval queue state
+  const [allRequests, setAllRequests] = useState<VerificationRequest[]>([]);
+  const [approvalFilter, setApprovalFilter] = useState<'all' | VerificationStatus>('pending');
+  const [reviewLabelMap, setReviewLabelMap] = useState<Record<string, string>>({});
+  const [reviewNoteMap, setReviewNoteMap] = useState<Record<string, string>>({});
+  const [reviewBusyUid, setReviewBusyUid] = useState<string | null>(null);
+
   useEffect(() => {
     if (!profile) return;
     setDisplayName(profile.displayName);
@@ -93,10 +149,13 @@ export function DashboardView({
     if (!user) {
       setMyPosts([]);
       setPostsLoading(false);
+      setMyVerification(null);
+      setAllRequests([]);
       return;
     }
+
     setPostsLoading(true);
-    const unsub = subscribeUserPosts(
+    const unsubPosts = subscribeUserPosts(
       user.uid,
       (list) => {
         setMyPosts(list);
@@ -106,7 +165,34 @@ export function DashboardView({
         setPostsLoading(false);
       }
     );
-    return () => unsub();
+
+    const unsubMyVer = subscribeMyVerificationRequest(
+      user.uid,
+      (req) => {
+        setMyVerification(req);
+        if (req) {
+          setLegalOrBrandName(req.legalOrBrandName);
+          setVerCategory(req.category);
+          setIdType(req.idType);
+          setIdReference(req.idReference);
+          setProofLink(req.proofLink);
+          setProofImageUrl(req.proofImageUrl);
+          setVerNote(req.note);
+        }
+      },
+      () => {}
+    );
+
+    let unsubAdmin: (() => void) | null = null;
+    if (user.email === ADMIN_EMAIL) {
+      unsubAdmin = subscribeAllVerificationRequests(setAllRequests, () => {});
+    }
+
+    return () => {
+      unsubPosts();
+      unsubMyVer();
+      if (unsubAdmin) unsubAdmin();
+    };
   }, [user]);
 
   useEffect(() => {
@@ -175,6 +261,16 @@ export function DashboardView({
     });
   }, [submissions, subSearch]);
 
+  const pendingApprovalsCount = useMemo(
+    () => allRequests.filter((r) => r.status === 'pending').length,
+    [allRequests]
+  );
+
+  const filteredApprovals = useMemo(() => {
+    if (approvalFilter === 'all') return allRequests;
+    return allRequests.filter((r) => r.status === approvalFilter);
+  }, [allRequests, approvalFilter]);
+
   if (!authReady) {
     return (
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-16 text-center text-sm text-[#5E5D59]">
@@ -192,8 +288,8 @@ export function DashboardView({
           </h1>
           <p className="text-sm sm:text-base text-[#5E5D59] leading-relaxed">
             Sign in with Google to manage your public name and bio, publish announcements,
-            events, and promos, adjust your custom forms, inspect form responses, and moderate
-            interactions securely.
+            events, and promos, submit proof for a verified badge, inspect form responses, and
+            moderate interactions securely.
           </p>
           <button
             type="button"
@@ -249,6 +345,80 @@ export function DashboardView({
     }
   };
 
+  const handleProofUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingProof(true);
+    try {
+      const compressed = await compressImageFile(file, 1080, 320000);
+      setProofImageUrl(compressed);
+      onNotify('Proof image attached');
+    } catch (err) {
+      onNotify(err instanceof Error ? err.message : 'Unable to process proof image.');
+    } finally {
+      setUploadingProof(false);
+    }
+  };
+
+  const handleSubmitVerification = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!legalOrBrandName.trim() || !idReference.trim()) {
+      onNotify('Please enter your official name and verification reference.');
+      return;
+    }
+    if (!proofImageUrl && !proofLink.trim()) {
+      onNotify('Please upload a proof image or provide an official verification link.');
+      return;
+    }
+
+    setSubmittingVerification(true);
+    try {
+      await submitVerificationRequest(profile, {
+        legalOrBrandName,
+        category: verCategory,
+        idType,
+        idReference,
+        proofLink,
+        proofImageUrl,
+        note: verNote,
+        proposedLabel: DEFAULT_BADGE_LABELS[verCategory],
+      });
+      onNotify('Verification proof submitted for admin review');
+    } catch {
+      onNotify('Could not submit verification proof.');
+    } finally {
+      setSubmittingVerification(false);
+    }
+  };
+
+  const handleAdminDecision = async (
+    req: VerificationRequest,
+    decision: 'approved' | 'rejected'
+  ) => {
+    if (!user?.email) return;
+    const label =
+      reviewLabelMap[req.uid] ?? req.proposedLabel ?? DEFAULT_BADGE_LABELS[req.category];
+    const note = reviewNoteMap[req.uid] ?? '';
+    if (decision === 'rejected' && !note.trim()) {
+      onNotify('Please add a brief reason before rejecting.');
+      return;
+    }
+
+    setReviewBusyUid(req.uid);
+    try {
+      await reviewVerificationRequest(req.uid, user.email, decision, label, note);
+      onNotify(
+        decision === 'approved'
+          ? `${req.requesterName} is now verified`
+          : `Request from ${req.requesterName} rejected`
+      );
+    } catch {
+      onNotify('Could not update verification status.');
+    } finally {
+      setReviewBusyUid(null);
+    }
+  };
+
   const handleDeletePost = async (postId: string) => {
     try {
       await deletePost(postId);
@@ -289,10 +459,26 @@ export function DashboardView({
     }
   };
 
-  const sidebarItems: { id: DashboardTab; label: string; icon: typeof BarChart3 }[] = [
+  const sidebarItems: {
+    id: DashboardTab;
+    label: string;
+    icon: typeof BarChart3;
+    badge?: number;
+  }[] = [
     { id: 'overview', label: 'Engagements', icon: BarChart3 },
     { id: 'posts', label: 'Manage Content', icon: FileText },
     { id: 'responses', label: 'Form Responses', icon: ClipboardList },
+    { id: 'verification', label: 'Verification', icon: ShieldCheck },
+    ...(isAdmin
+      ? [
+          {
+            id: 'approvals' as const,
+            label: 'Approvals',
+            icon: BadgeCheck,
+            badge: pendingApprovalsCount,
+          },
+        ]
+      : []),
     { id: 'profile', label: 'Profile & Bio', icon: UserCheck },
   ];
 
@@ -301,7 +487,7 @@ export function DashboardView({
   return (
     <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
       <div className="flex flex-col lg:flex-row gap-8 items-start">
-        {/* Sidebar Navigation (240px–260px on desktop) */}
+        {/* Sidebar Navigation */}
         <aside className="w-full lg:w-64 shrink-0 bg-white border border-[#E7E5E0] rounded-2xl p-4 space-y-5">
           <div className="flex items-center gap-3 pb-4 border-b border-[#E7E5E0]">
             {profile.avatarUrl ? (
@@ -317,7 +503,14 @@ export function DashboardView({
               </div>
             )}
             <div className="min-w-0">
-              <p className="text-sm font-bold text-[#141413] truncate">{profile.displayName}</p>
+              <div className="flex items-center gap-1 min-w-0">
+                <p className="text-sm font-bold text-[#141413] truncate">{profile.displayName}</p>
+                {profile.badgeVerified && (
+                  <span title={profile.verifiedLabel || 'Verified'}>
+                    <BadgeCheck className="w-4 h-4 fill-[#0E7C5B] text-white shrink-0" />
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-[#5E5D59] capitalize truncate">
                 {profile.accountType} · {profile.location}
               </p>
@@ -333,14 +526,21 @@ export function DashboardView({
                   key={item.id}
                   type="button"
                   onClick={() => setActiveTab(item.id)}
-                  className={`flex items-center gap-2.5 px-3 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
+                  className={`flex items-center justify-between gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
                     active
                       ? 'bg-[#141413] text-white'
                       : 'text-[#5E5D59] hover:text-[#141413] hover:bg-[#FAF9F7]'
                   }`}
                 >
-                  <Icon className="w-4 h-4 shrink-0" />
-                  <span>{item.label}</span>
+                  <span className="inline-flex items-center gap-2.5 min-w-0">
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <span className="truncate">{item.label}</span>
+                  </span>
+                  {typeof item.badge === 'number' && item.badge > 0 && (
+                    <span className="px-1.5 py-0.5 text-[11px] font-mono font-semibold bg-[#0E7C5B] text-white rounded">
+                      {item.badge}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -398,6 +598,29 @@ export function DashboardView({
                   </div>
                 ))}
               </div>
+
+              {!profile.badgeVerified && (
+                <div className="bg-white border border-[#E7E5E0] rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-bold text-[#141413]">
+                      Get Verified on MoodSpace Africa
+                    </p>
+                    <p className="text-xs text-[#5E5D59]">
+                      Submit your Ghana Card, RGD business registration, or official social proof
+                      so people know your account is authentic.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('verification')}
+                    className="px-4 py-2 text-xs font-semibold text-white bg-[#141413] rounded-lg hover:bg-[#2C2C2A] whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    {myVerification?.status === 'pending'
+                      ? 'View Pending Request'
+                      : 'Request Verification'}
+                  </button>
+                </div>
+              )}
 
               <div className="bg-white border border-[#E7E5E0] rounded-2xl overflow-hidden">
                 <div className="px-5 py-4 border-b border-[#E7E5E0] flex items-center justify-between">
@@ -781,7 +1004,401 @@ export function DashboardView({
             </div>
           )}
 
-          {/* TAB 4: PROFILE & BIO */}
+          {/* TAB 4: IDENTITY VERIFICATION REQUEST */}
+          {activeTab === 'verification' && (
+            <div className="bg-white border border-[#E7E5E0] rounded-2xl p-6 space-y-6">
+              <div>
+                <h1 className="font-display text-2xl font-bold text-[#141413]">
+                  Identity &amp; Brand Verification
+                </h1>
+                <p className="text-sm text-[#5E5D59] mt-0.5">
+                  Prove you are a real creator, business, or event organizer. Your proof is kept
+                  private and reviewed only by the MoodSpace Africa administrator.
+                </p>
+              </div>
+
+              {/* Status Banner */}
+              {profile.badgeVerified ? (
+                <div className="p-4 rounded-xl border border-[#0E7C5B]/30 bg-[#0E7C5B]/5 flex items-start gap-3">
+                  <BadgeCheck className="w-5 h-5 fill-[#0E7C5B] text-white shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-bold text-[#141413]">
+                      Account Verified · {profile.verifiedLabel || 'Verified'}
+                    </p>
+                    <p className="text-xs text-[#353431]">
+                      Your verified badge appears next to your name across all your posts and
+                      comments.
+                    </p>
+                  </div>
+                </div>
+              ) : myVerification?.status === 'pending' ? (
+                <div className="p-4 rounded-xl border border-[#C87A19]/40 bg-[#C87A19]/5 flex items-start gap-3">
+                  <Clock className="w-5 h-5 text-[#C87A19] shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-bold text-[#141413]">Verification Pending Review</p>
+                    <p className="text-xs text-[#353431]">
+                      Submitted {formatTimestamp(myVerification.updatedAt)}. You can update your
+                      submitted proof below if needed before approval.
+                    </p>
+                  </div>
+                </div>
+              ) : myVerification?.status === 'rejected' ? (
+                <div className="p-4 rounded-xl border border-red-200 bg-red-50 flex items-start gap-3">
+                  <XCircle className="w-5 h-5 text-[#B91C1C] shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-bold text-[#B91C1C]">
+                      Verification Needs Attention
+                    </p>
+                    <p className="text-xs text-[#353431]">
+                      {myVerification.reviewNote ||
+                        'Please upload clearer proof or provide an official reference and resubmit.'}
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+
+              <form onSubmit={handleSubmitVerification} className="space-y-5 max-w-xl">
+                <div>
+                  <label className="block text-xs font-semibold text-[#5E5D59] mb-1">
+                    Official Full Name or Registered Brand / Business Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={SCHEMA_LIMITS.VERIFICATION_LEGAL_NAME_MAX}
+                    value={legalOrBrandName}
+                    onChange={(e) => setLegalOrBrandName(e.target.value)}
+                    placeholder="e.g. Kwame Mensah or EchoHouse Ghana Ltd"
+                    className="w-full px-3.5 py-2 text-sm border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-[#5E5D59] mb-1">
+                      Verification Badge Category
+                    </label>
+                    <select
+                      value={verCategory}
+                      onChange={(e) => setVerCategory(e.target.value as VerificationCategory)}
+                      className="w-full px-3.5 py-2 text-sm bg-white border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
+                    >
+                      <option value="creator">Verified Creator</option>
+                      <option value="business">Verified Business</option>
+                      <option value="organizer">Verified Organizer</option>
+                      <option value="media">Verified Media</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#5E5D59] mb-1">
+                      Proof Type
+                    </label>
+                    <select
+                      value={idType}
+                      onChange={(e) => setIdType(e.target.value as VerificationIdType)}
+                      className="w-full px-3.5 py-2 text-sm bg-white border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
+                    >
+                      <option value="ghana_card">Ghana Card / National ID</option>
+                      <option value="business_reg">Business Registration (RGD)</option>
+                      <option value="social_handle">Official Social Media Handle</option>
+                      <option value="website_press">Official Website / Press</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#5E5D59] mb-1">
+                    ID Reference, Registration Number, or Official Handle
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={SCHEMA_LIMITS.VERIFICATION_REF_MAX}
+                    value={idReference}
+                    onChange={(e) => setIdReference(e.target.value)}
+                    placeholder="e.g. GHA-7284XXXX-1, RGD BN-40219, or @yourbrandgh"
+                    className="w-full px-3.5 py-2 text-sm border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#5E5D59] mb-1">
+                    Official Link (Instagram, X, LinkedIn, or Business Website)
+                  </label>
+                  <input
+                    type="url"
+                    maxLength={SCHEMA_LIMITS.VERIFICATION_LINK_MAX}
+                    value={proofLink}
+                    onChange={(e) => setProofLink(e.target.value)}
+                    placeholder="https://instagram.com/yourhandle"
+                    className="w-full px-3.5 py-2 text-sm border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-xs font-semibold text-[#5E5D59]">
+                    Upload Proof Photo (ID selfie, business certificate, or account proof)
+                  </label>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-[#141413] bg-[#FAF9F7] border border-[#D4D1CA] rounded-lg hover:border-[#0E7C5B] cursor-pointer">
+                      <ImagePlus className="w-3.5 h-3.5" />
+                      {uploadingProof ? 'Compressing...' : proofImageUrl ? 'Replace Proof Photo' : 'Upload Proof Photo'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleProofUpload}
+                        className="hidden"
+                      />
+                    </label>
+                    {proofImageUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setProofImageUrl('')}
+                        className="text-xs text-[#B91C1C] hover:underline cursor-pointer"
+                      >
+                        Remove photo
+                      </button>
+                    )}
+                  </div>
+                  {proofImageUrl && (
+                    <div className="rounded-xl overflow-hidden border border-[#E7E5E0] bg-[#FAF9F7] max-w-sm">
+                      <img
+                        src={proofImageUrl}
+                        alt="Uploaded verification proof preview"
+                        className="w-full max-h-56 object-contain"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#5E5D59] mb-1">
+                    Additional Notes for Reviewer
+                  </label>
+                  <textarea
+                    rows={3}
+                    maxLength={SCHEMA_LIMITS.VERIFICATION_NOTE_MAX}
+                    value={verNote}
+                    onChange={(e) => setVerNote(e.target.value)}
+                    placeholder="Share any context that confirms you represent this creator profile or Ghana/African business..."
+                    className="w-full px-3.5 py-2 text-sm border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={submittingVerification || uploadingProof}
+                  className="px-5 py-2.5 text-sm font-semibold text-white bg-[#0E7C5B] rounded-lg hover:bg-[#095E44] disabled:opacity-60 cursor-pointer"
+                >
+                  {submittingVerification
+                    ? 'Submitting Proof...'
+                    : myVerification
+                      ? 'Update & Resubmit Proof'
+                      : 'Submit Proof for Verification'}
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* TAB 5: ADMIN VERIFICATION APPROVALS */}
+          {activeTab === 'approvals' && isAdmin && (
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h1 className="font-display text-2xl font-bold text-[#141413]">
+                    Verification Approvals
+                  </h1>
+                  <p className="text-sm text-[#5E5D59] mt-0.5">
+                    Inspect submitted creator &amp; business proof and grant or reject verified
+                    badges.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-1 p-1 bg-white border border-[#E7E5E0] rounded-lg">
+                  {(
+                    [
+                      { id: 'pending', label: `Pending (${pendingApprovalsCount})` },
+                      { id: 'approved', label: 'Approved' },
+                      { id: 'rejected', label: 'Rejected' },
+                      { id: 'all', label: 'All' },
+                    ] as const
+                  ).map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setApprovalFilter(f.id)}
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                        approvalFilter === f.id
+                          ? 'bg-[#141413] text-white'
+                          : 'text-[#5E5D59] hover:text-[#141413]'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {filteredApprovals.length === 0 ? (
+                <div className="bg-white border border-[#E7E5E0] rounded-2xl p-8 text-center text-sm text-[#5E5D59]">
+                  No verification requests in this filter.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {filteredApprovals.map((req) => {
+                    const labelValue =
+                      reviewLabelMap[req.uid] ??
+                      req.proposedLabel ??
+                      DEFAULT_BADGE_LABELS[req.category];
+                    const noteValue = reviewNoteMap[req.uid] ?? req.reviewNote ?? '';
+                    const isBusy = reviewBusyUid === req.uid;
+
+                    return (
+                      <div
+                        key={req.uid}
+                        className="bg-white border border-[#E7E5E0] rounded-2xl p-5 sm:p-6 space-y-4"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-[#F0EEE9]">
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="font-display text-lg font-bold text-[#141413]">
+                                {req.requesterName}
+                              </h3>
+                              <span className="text-xs text-[#5E5D59]">
+                                · {req.requesterLocation || 'Ghana'} ·{' '}
+                                <span className="capitalize">{req.accountType}</span>
+                              </span>
+                            </div>
+                            <p className="text-xs text-[#5E5D59]">
+                              Legal / Brand:{' '}
+                              <strong className="text-[#141413]">{req.legalOrBrandName}</strong> ·{' '}
+                              {ID_TYPE_LABELS[req.idType]}:{' '}
+                              <code className="font-mono text-[#141413] bg-[#FAF9F7] px-1.5 py-0.5 rounded border border-[#E7E5E0]">
+                                {req.idReference}
+                              </code>
+                            </p>
+                          </div>
+
+                          <div className="inline-flex items-center gap-1.5 text-xs font-semibold capitalize">
+                            {req.status === 'approved' ? (
+                              <span className="inline-flex items-center gap-1 text-[#0E7C5B]">
+                                <CheckCircle2 className="w-4 h-4" />
+                                Approved
+                              </span>
+                            ) : req.status === 'rejected' ? (
+                              <span className="inline-flex items-center gap-1 text-[#B91C1C]">
+                                <XCircle className="w-4 h-4" />
+                                Rejected
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[#C87A19]">
+                                <Clock className="w-4 h-4" />
+                                Pending Review
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {req.note && (
+                          <p className="text-sm text-[#353431] bg-[#FAF9F7] p-3 rounded-lg border border-[#F0EEE9]">
+                            {req.note}
+                          </p>
+                        )}
+
+                        {req.proofLink && (
+                          <p className="text-xs">
+                            <span className="text-[#5E5D59] font-medium">Proof Link: </span>
+                            <a
+                              href={req.proofLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[#0E7C5B] font-semibold hover:underline break-all"
+                            >
+                              {req.proofLink}
+                              <ExternalLink className="w-3 h-3 shrink-0" />
+                            </a>
+                          </p>
+                        )}
+
+                        {req.proofImageUrl && (
+                          <div className="rounded-xl overflow-hidden border border-[#E7E5E0] bg-[#FAF9F7] max-w-md">
+                            <img
+                              src={req.proofImageUrl}
+                              alt={`Submitted verification proof from ${req.requesterName}`}
+                              className="w-full max-h-72 object-contain"
+                            />
+                          </div>
+                        )}
+
+                        <div className="pt-3 border-t border-[#E7E5E0] grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-semibold text-[#5E5D59] mb-1">
+                              Verified Badge Label
+                            </label>
+                            <input
+                              type="text"
+                              maxLength={SCHEMA_LIMITS.VERIFICATION_LABEL_MAX}
+                              value={labelValue}
+                              onChange={(e) =>
+                                setReviewLabelMap((prev) => ({
+                                  ...prev,
+                                  [req.uid]: e.target.value,
+                                }))
+                              }
+                              className="w-full px-3 py-2 text-xs border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-[#5E5D59] mb-1">
+                              Reviewer Note (shown if rejected)
+                            </label>
+                            <input
+                              type="text"
+                              maxLength={SCHEMA_LIMITS.VERIFICATION_REVIEW_NOTE_MAX}
+                              value={noteValue}
+                              onChange={(e) =>
+                                setReviewNoteMap((prev) => ({
+                                  ...prev,
+                                  [req.uid]: e.target.value,
+                                }))
+                              }
+                              placeholder="Optional note or reason..."
+                              className="w-full px-3 py-2 text-xs border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => void handleAdminDecision(req, 'approved')}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0E7C5B] rounded-lg hover:bg-[#095E44] disabled:opacity-60 cursor-pointer"
+                          >
+                            <BadgeCheck className="w-4 h-4" />
+                            {req.status === 'approved' ? 'Update Badge' : 'Approve & Verify'}
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => void handleAdminDecision(req, 'rejected')}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-[#B91C1C] bg-white border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-60 cursor-pointer"
+                          >
+                            <XCircle className="w-4 h-4" />
+                            {req.status === 'approved' ? 'Revoke Badge' : 'Reject'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 6: PROFILE & BIO */}
           {activeTab === 'profile' && (
             <div className="bg-white border border-[#E7E5E0] rounded-2xl p-6 space-y-6">
               <div>

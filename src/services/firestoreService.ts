@@ -26,6 +26,10 @@ import {
   type PostVisibility,
   type PublicProfile,
   SCHEMA_LIMITS,
+  type VerificationCategory,
+  type VerificationIdType,
+  type VerificationRequest,
+  type VerifiedBadgeInfo,
 } from '../types';
 import { generateSafeId } from '../utils/media';
 
@@ -83,6 +87,8 @@ export async function ensureUserProfile(user: User): Promise<PublicProfile> {
       accountType: 'creator' as AccountType,
       avatarUrl: clampString(user.photoURL || '', SCHEMA_LIMITS.AVATAR_URL_MAX),
       isPublic: true,
+      badgeVerified: false,
+      verifiedLabel: '',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
@@ -118,6 +124,39 @@ export async function updateUserProfile(
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
+}
+
+export function subscribeVerifiedProfiles(
+  onData: (badgesByUid: Record<string, VerifiedBadgeInfo>) => void,
+  onError?: (err: Error) => void
+) {
+  const q = query(collection(db, 'publicProfiles'), where('isPublic', '==', true));
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const map: Record<string, VerifiedBadgeInfo> = {};
+      snapshot.docs.forEach((d) => {
+        const profile = d.data() as PublicProfile;
+        if (profile.badgeVerified) {
+          map[profile.uid] = {
+            uid: profile.uid,
+            verifiedLabel: profile.verifiedLabel || 'Verified',
+          };
+        }
+      });
+      onData(map);
+    },
+    (error) => {
+      try {
+        handleFirestoreError(error, OperationType.LIST, 'publicProfiles');
+      } catch (wrapped) {
+        if (onError && wrapped instanceof Error) {
+          onError(wrapped);
+        }
+      }
+    }
+  );
 }
 
 export function subscribePublicPosts(
@@ -361,6 +400,54 @@ export async function incrementPostShare(post: Post): Promise<void> {
   }
 }
 
+export function subscribeSavedPostIds(
+  uid: string,
+  onData: (savedIds: Set<string>) => void,
+  onError?: (err: Error) => void
+) {
+  const path = `userPrivate/${uid}/savedPosts`;
+  const q = query(collection(db, 'userPrivate', uid, 'savedPosts'), where('userId', '==', uid));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const next = new Set<string>();
+      snap.docs.forEach((d) => next.add(d.id));
+      onData(next);
+    },
+    (error) => {
+      try {
+        handleFirestoreError(error, OperationType.LIST, path);
+      } catch (wrapped) {
+        if (onError && wrapped instanceof Error) {
+          onError(wrapped);
+        }
+      }
+    }
+  );
+}
+
+export async function toggleSavedPost(
+  postId: string,
+  uid: string,
+  currentlySaved: boolean
+): Promise<void> {
+  const path = `userPrivate/${uid}/savedPosts/${postId}`;
+  try {
+    const ref = doc(db, 'userPrivate', uid, 'savedPosts', postId);
+    if (currentlySaved) {
+      await deleteDoc(ref);
+    } else {
+      await setDoc(ref, {
+        userId: uid,
+        postId,
+        createdAt: serverTimestamp(),
+      });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
 export function subscribePostComments(
   postId: string,
   onData: (comments: PostComment[]) => void,
@@ -499,27 +586,145 @@ export async function deleteFormSubmission(postId: string, submissionId: string)
   }
 }
 
-export interface FeaturedPostTemplate {
-  category: PostCategory;
-  mediaFormat: MediaFormat;
-  title: string;
-  content: string;
-  photoUrl: string;
-  videoUrl: string;
-  eventDate: string;
-  eventLocation: string;
-  promoCode: string;
-  brandLabel: string;
-  brandCity: string;
-  hasForm: boolean;
-  formConfig: FormConfig;
+// --- Identity Verification Requests & Admin Approval ---
+
+export function subscribeMyVerificationRequest(
+  uid: string,
+  onData: (req: VerificationRequest | null) => void,
+  onError?: (err: Error) => void
+) {
+  const path = `verificationRequests/${uid}`;
+  return onSnapshot(
+    doc(db, 'verificationRequests', uid),
+    (snap) => {
+      onData(snap.exists() ? (snap.data() as VerificationRequest) : null);
+    },
+    (error) => {
+      try {
+        handleFirestoreError(error, OperationType.GET, path);
+      } catch (wrapped) {
+        if (onError && wrapped instanceof Error) {
+          onError(wrapped);
+        }
+      }
+    }
+  );
 }
 
-export const TIDAL_RAVE_POSTER_PATH = '/assets/aistudio/99bc11007403730_f92625d8.jpg';
-export const TIDAL_RAVE_GENUINE_TITLE = 'Tidal Rave Ghana 2026 — Rave Takeover by Davido';
-const TIDAL_RAVE_GENUINE_CONTENT =
-  "Africa's Biggest Beach Festival returns to La Palm Royal Beach Hotel for the Rave Takeover by Davido! #NoRaverLeftBehind\n\nGet your tickets now: dial *714*20# or visit www.tidalravefestival.com for more info.\n\nPowered by São.";
+export interface SubmitVerificationInput {
+  legalOrBrandName: string;
+  category: VerificationCategory;
+  idType: VerificationIdType;
+  idReference: string;
+  proofLink: string;
+  proofImageUrl: string;
+  note: string;
+  proposedLabel: string;
+}
 
+export async function submitVerificationRequest(
+  profile: PublicProfile,
+  input: SubmitVerificationInput
+): Promise<void> {
+  const path = `verificationRequests/${profile.uid}`;
+  try {
+    const ref = doc(db, 'verificationRequests', profile.uid);
+    const existingSnap = await getDoc(ref);
+
+    const sharedFields = {
+      requesterName: clampString(profile.displayName, SCHEMA_LIMITS.DISPLAY_NAME_MAX) || 'Member',
+      requesterLocation: clampString(profile.location, SCHEMA_LIMITS.LOCATION_MAX),
+      accountType: profile.accountType,
+      legalOrBrandName: clampString(input.legalOrBrandName, SCHEMA_LIMITS.VERIFICATION_LEGAL_NAME_MAX),
+      category: input.category,
+      idType: input.idType,
+      idReference: clampString(input.idReference, SCHEMA_LIMITS.VERIFICATION_REF_MAX),
+      proofLink: clampString(input.proofLink, SCHEMA_LIMITS.VERIFICATION_LINK_MAX),
+      proofImageUrl: clampString(input.proofImageUrl, SCHEMA_LIMITS.VERIFICATION_PROOF_IMAGE_MAX),
+      note: clampString(input.note, SCHEMA_LIMITS.VERIFICATION_NOTE_MAX),
+      proposedLabel: clampString(input.proposedLabel, SCHEMA_LIMITS.VERIFICATION_LABEL_MAX),
+      status: 'pending' as const,
+      reviewNote: '',
+      reviewedBy: '',
+      updatedAt: serverTimestamp(),
+    };
+
+    if (existingSnap.exists()) {
+      await updateDoc(ref, sharedFields);
+    } else {
+      await setDoc(ref, {
+        uid: profile.uid,
+        ...sharedFields,
+        createdAt: serverTimestamp(),
+      });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export function subscribeAllVerificationRequests(
+  onData: (requests: VerificationRequest[]) => void,
+  onError?: (err: Error) => void
+) {
+  const path = 'verificationRequests';
+  return onSnapshot(
+    collection(db, 'verificationRequests'),
+    (snap) => {
+      const rank = { pending: 0, rejected: 1, approved: 2 } as const;
+      const list = snap.docs
+        .map((d) => d.data() as VerificationRequest)
+        .sort((a, b) => {
+          const rDiff = rank[a.status] - rank[b.status];
+          if (rDiff !== 0) return rDiff;
+          return (b.updatedAt?.toMillis() ?? 0) - (a.updatedAt?.toMillis() ?? 0);
+        });
+      onData(list);
+    },
+    (error) => {
+      try {
+        handleFirestoreError(error, OperationType.LIST, path);
+      } catch (wrapped) {
+        if (onError && wrapped instanceof Error) {
+          onError(wrapped);
+        }
+      }
+    }
+  );
+}
+
+export async function reviewVerificationRequest(
+  targetUid: string,
+  adminEmail: string,
+  decision: 'approved' | 'rejected',
+  verifiedLabel: string,
+  reviewNote: string
+): Promise<void> {
+  const path = `verificationRequests/${targetUid} | publicProfiles/${targetUid}`;
+  try {
+    const cleanLabel = clampString(verifiedLabel, SCHEMA_LIMITS.VERIFICATION_LABEL_MAX) || 'Verified';
+    const cleanNote = clampString(reviewNote, SCHEMA_LIMITS.VERIFICATION_REVIEW_NOTE_MAX);
+
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'verificationRequests', targetUid), {
+      status: decision,
+      proposedLabel: cleanLabel,
+      reviewNote: cleanNote,
+      reviewedBy: clampString(adminEmail, 200),
+      updatedAt: serverTimestamp(),
+    });
+    batch.update(doc(db, 'publicProfiles', targetUid), {
+      badgeVerified: decision === 'approved',
+      verifiedLabel: decision === 'approved' ? cleanLabel : '',
+      updatedAt: serverTimestamp(),
+    });
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+// Cleanup helper for any leftover posts from earlier auto-seeding builds
 const OLD_AUTO_SEEDED_TITLES = new Set([
   'Tidal Rave Festival Ghana — La Palm Beach Reel & VIP Wave Pass',
   'Africa Tech Festival — Building Africa’s Digital Future & Next Gen Talent',
@@ -529,42 +734,20 @@ const OLD_AUTO_SEEDED_TITLES = new Set([
   'East Africa SME Zero-Fee Logistics & Founders Fellowship Open',
 ]);
 
+const LEGACY_TIDAL_TITLE = 'Tidal Rave Ghana 2026 — Rave Takeover by Davido';
+const LEGACY_TIDAL_CONTENT =
+  "Africa's Biggest Beach Festival returns to La Palm Royal Beach Hotel for the Rave Takeover by Davido! #NoRaverLeftBehind\n\nGet your tickets now: dial *714*20# or visit www.tidalravefestival.com for more info.\n\nPowered by São.";
+
 function isAccidentalAutoSeededPost(post: Post): boolean {
   if (OLD_AUTO_SEEDED_TITLES.has(post.title)) return true;
-  if (
-    post.title === TIDAL_RAVE_GENUINE_TITLE &&
-    post.content === TIDAL_RAVE_GENUINE_CONTENT
-  ) {
+  if (post.title === LEGACY_TIDAL_TITLE && post.content === LEGACY_TIDAL_CONTENT) {
     return true;
   }
   return false;
 }
 
-export const FEATURED_AFRICAN_FEED: FeaturedPostTemplate[] = [
-  {
-    category: 'event',
-    mediaFormat: 'photo',
-    brandLabel: 'Tidal Rave Ghana · EchoHouse',
-    brandCity: 'Accra, Ghana',
-    title: TIDAL_RAVE_GENUINE_TITLE,
-    content: TIDAL_RAVE_GENUINE_CONTENT,
-    photoUrl: TIDAL_RAVE_POSTER_PATH,
-    videoUrl: '',
-    eventDate: 'Sat, 14 Nov 2026 · 12:00 PM',
-    eventLocation: 'La Palm Royal Beach Hotel, Accra',
-    promoCode: '',
-    hasForm: false,
-    formConfig: {
-      title: '',
-      description: '',
-      isOpen: false,
-      fields: [],
-    },
-  },
-];
-
 export async function cleanupAccidentalAutoSeededPosts(uid: string): Promise<number> {
-  const storageKey = `moodspace_cleanup_autoseed_v3_${uid}`;
+  const storageKey = `moodspace_cleanup_autoseed_v4_${uid}`;
   if (typeof window !== 'undefined' && window.localStorage.getItem(storageKey)) {
     return 0;
   }
@@ -591,4 +774,3 @@ export async function cleanupAccidentalAutoSeededPosts(uid: string): Promise<num
     return handleFirestoreError(error, OperationType.WRITE, 'posts');
   }
 }
-

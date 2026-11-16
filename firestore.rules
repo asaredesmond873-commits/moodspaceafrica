@@ -28,6 +28,10 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.email_verified == true;
     }
 
+    function isAdmin() {
+      return isVerified() && request.auth.token.email == 'asaredesmond873@gmail.com';
+    }
+
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
@@ -39,7 +43,8 @@ service cloud.firestore {
           'uid', 'displayName', 'bio', 'location', 'accountType', 'avatarUrl', 'isPublic', 'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'uid', 'displayName', 'bio', 'location', 'accountType', 'avatarUrl', 'isPublic', 'createdAt', 'updatedAt'
+          'uid', 'displayName', 'bio', 'location', 'accountType', 'avatarUrl', 'isPublic',
+          'badgeVerified', 'verifiedLabel', 'createdAt', 'updatedAt'
         ])
         && isValidId(data.uid)
         && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80
@@ -48,6 +53,8 @@ service cloud.firestore {
         && data.accountType in ['creator', 'business', 'community']
         && data.avatarUrl is string && data.avatarUrl.size() <= 150000
         && data.isPublic is bool && data.isPublic == true
+        && (!('badgeVerified' in data) || data.badgeVerified is bool)
+        && (!('verifiedLabel' in data) || (data.verifiedLabel is string && data.verifiedLabel.size() <= 60))
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -57,6 +64,46 @@ service cloud.firestore {
         && data.keys().hasOnly(['uid', 'email', 'createdAt', 'updatedAt'])
         && isValidId(data.uid)
         && data.email is string && data.email.size() <= 200
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSavedPost(data) {
+      return data.keys().hasAll(['userId', 'postId', 'createdAt'])
+        && data.keys().hasOnly(['userId', 'postId', 'createdAt'])
+        && isValidId(data.userId)
+        && isValidId(data.postId)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidVerificationRequest(data) {
+      return data.keys().hasAll([
+          'uid', 'requesterName', 'requesterLocation', 'accountType',
+          'legalOrBrandName', 'category', 'idType', 'idReference',
+          'proofLink', 'proofImageUrl', 'note', 'proposedLabel',
+          'status', 'reviewNote', 'reviewedBy', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid', 'requesterName', 'requesterLocation', 'accountType',
+          'legalOrBrandName', 'category', 'idType', 'idReference',
+          'proofLink', 'proofImageUrl', 'note', 'proposedLabel',
+          'status', 'reviewNote', 'reviewedBy', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.uid)
+        && data.requesterName is string && data.requesterName.size() >= 1 && data.requesterName.size() <= 80
+        && data.requesterLocation is string && data.requesterLocation.size() <= 100
+        && data.accountType in ['creator', 'business', 'community']
+        && data.legalOrBrandName is string && data.legalOrBrandName.size() >= 1 && data.legalOrBrandName.size() <= 120
+        && data.category in ['creator', 'business', 'organizer', 'media']
+        && data.idType in ['ghana_card', 'business_reg', 'social_handle', 'website_press']
+        && data.idReference is string && data.idReference.size() >= 1 && data.idReference.size() <= 140
+        && data.proofLink is string && data.proofLink.size() <= 500
+        && data.proofImageUrl is string && data.proofImageUrl.size() <= 450000
+        && data.note is string && data.note.size() <= 1000
+        && data.proposedLabel is string && data.proposedLabel.size() <= 60
+        && data.status in ['pending', 'approved', 'rejected']
+        && data.reviewNote is string && data.reviewNote.size() <= 500
+        && data.reviewedBy is string && data.reviewedBy.size() <= 200
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -158,25 +205,39 @@ service cloud.firestore {
     // --- Collection Rules ---
 
     match /publicProfiles/{userId} {
-      allow get: if isValidId(userId) && (existing().isPublic == true || isOwner(userId));
-      allow list: if existing().isPublic == true || (isSignedIn() && existing().uid == request.auth.uid);
+      allow get: if isValidId(userId) && (existing().isPublic == true || isOwner(userId) || isAdmin());
+      allow list: if existing().isPublic == true || (isSignedIn() && existing().uid == request.auth.uid) || isAdmin();
       allow create: if isVerified()
         && isValidId(userId)
         && isOwner(userId)
         && isValidPublicProfile(incoming())
         && incoming().uid == request.auth.uid
+        && (!('badgeVerified' in incoming()) || incoming().badgeVerified == false)
+        && (!('verifiedLabel' in incoming()) || incoming().verifiedLabel == '')
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
       allow update: if isVerified()
         && isValidId(userId)
-        && isOwner(userId)
         && isValidPublicProfile(incoming())
         && incoming().uid == existing().uid
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
-        && incoming().diff(existing()).affectedKeys().hasOnly([
-          'displayName', 'bio', 'location', 'accountType', 'avatarUrl', 'updatedAt'
-        ]);
+        && (
+          (
+            isOwner(userId)
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'displayName', 'bio', 'location', 'accountType', 'avatarUrl', 'updatedAt'
+            ])
+          )
+          || (
+            isAdmin()
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'badgeVerified', 'verifiedLabel', 'updatedAt'
+            ])
+            && incoming().badgeVerified is bool
+            && incoming().verifiedLabel is string
+          )
+        );
       allow delete: if false;
     }
 
@@ -199,6 +260,66 @@ service cloud.firestore {
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'updatedAt']);
       allow delete: if false;
+
+      match /savedPosts/{postId} {
+        allow get: if isSignedIn() && isValidId(userId) && isValidId(postId) && isOwner(userId);
+        allow list: if isSignedIn() && isValidId(userId) && isOwner(userId) && existing().userId == request.auth.uid;
+        allow create: if isVerified()
+          && isValidId(userId)
+          && isValidId(postId)
+          && isOwner(userId)
+          && isValidSavedPost(incoming())
+          && incoming().userId == request.auth.uid
+          && incoming().postId == postId
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/posts/$(postId));
+        allow update: if false;
+        allow delete: if isVerified() && isValidId(userId) && isValidId(postId) && isOwner(userId);
+      }
+    }
+
+    match /verificationRequests/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isSignedIn() && (existing().uid == request.auth.uid || isAdmin());
+      allow create: if isVerified()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidVerificationRequest(incoming())
+        && incoming().uid == userId
+        && incoming().status == 'pending'
+        && incoming().reviewNote == ''
+        && incoming().reviewedBy == ''
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerified()
+        && isValidId(userId)
+        && isValidVerificationRequest(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (
+            isOwner(userId)
+            && incoming().status == 'pending'
+            && incoming().reviewNote == ''
+            && incoming().reviewedBy == ''
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'requesterName', 'requesterLocation', 'accountType',
+              'legalOrBrandName', 'category', 'idType', 'idReference',
+              'proofLink', 'proofImageUrl', 'note', 'proposedLabel',
+              'status', 'reviewNote', 'reviewedBy', 'updatedAt'
+            ])
+          )
+          || (
+            isAdmin()
+            && incoming().status in ['approved', 'rejected']
+            && incoming().reviewedBy == request.auth.token.email
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'status', 'proposedLabel', 'reviewNote', 'reviewedBy', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isVerified() && isValidId(userId) && (isOwner(userId) || isAdmin());
     }
 
     match /posts/{postId} {

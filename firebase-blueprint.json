@@ -41,6 +41,15 @@
           "type": "boolean",
           "description": "Indicates the profile is discoverable."
         },
+        "badgeVerified": {
+          "type": "boolean",
+          "description": "Admin-approved verification badge status."
+        },
+        "verifiedLabel": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "Admin-assigned verification label such as Verified Creator or Verified Business."
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time",
@@ -82,6 +91,146 @@
         }
       },
       "required": ["uid", "email", "createdAt", "updatedAt"]
+    },
+    "SavedPost": {
+      "title": "SavedPost",
+      "description": "Private bookmark linking a signed-in user to a saved community post.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128,
+          "description": "Owner Firebase Auth UID."
+        },
+        "postId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128,
+          "description": "Bookmarked post ID."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when bookmarked."
+        }
+      },
+      "required": ["userId", "postId", "createdAt"]
+    },
+    "VerificationRequest": {
+      "title": "VerificationRequest",
+      "description": "Creator or business identity proof submitted for admin verification review.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128,
+          "description": "Applicant Firebase Auth UID."
+        },
+        "requesterName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Current display name of applicant."
+        },
+        "requesterLocation": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Applicant city and country."
+        },
+        "accountType": {
+          "type": "string",
+          "enum": ["creator", "business", "community"],
+          "description": "Applicant account role."
+        },
+        "legalOrBrandName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Official full legal name or registered business/brand name."
+        },
+        "category": {
+          "type": "string",
+          "enum": ["creator", "business", "organizer", "media"],
+          "description": "Verification badge category requested."
+        },
+        "idType": {
+          "type": "string",
+          "enum": ["ghana_card", "business_reg", "social_handle", "website_press"],
+          "description": "Type of identity or brand proof provided."
+        },
+        "idReference": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 140,
+          "description": "Masked Ghana Card, registration reference, official handle, or domain."
+        },
+        "proofLink": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Optional verification URL to official social page, press, or website."
+        },
+        "proofImageUrl": {
+          "type": "string",
+          "maxLength": 450000,
+          "description": "Uploaded proof photo URL or compressed JPEG data URI."
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "Applicant explanation and supporting details."
+        },
+        "proposedLabel": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "Verification label assigned on approval."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "approved", "rejected"],
+          "description": "Moderation status of the verification request."
+        },
+        "reviewNote": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Admin review message or rejection reason."
+        },
+        "reviewedBy": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Admin email that processed the review."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of initial submission."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last submission or review."
+        }
+      },
+      "required": [
+        "uid",
+        "requesterName",
+        "requesterLocation",
+        "accountType",
+        "legalOrBrandName",
+        "category",
+        "idType",
+        "idReference",
+        "proofLink",
+        "proofImageUrl",
+        "note",
+        "proposedLabel",
+        "status",
+        "reviewNote",
+        "reviewedBy",
+        "createdAt",
+        "updatedAt"
+      ]
     },
     "Post": {
       "title": "Post",
@@ -358,6 +507,14 @@
     "/userPrivate/{userId}": {
       "schema": { "$ref": "#/entities/UserPrivate" },
       "description": "Private user account PII restricted strictly to the owner."
+    },
+    "/userPrivate/{userId}/savedPosts/{postId}": {
+      "schema": { "$ref": "#/entities/SavedPost" },
+      "description": "Owner-only saved post bookmarks."
+    },
+    "/verificationRequests/{userId}": {
+      "schema": { "$ref": "#/entities/VerificationRequest" },
+      "description": "Identity proof requests readable only by the applicant and the bootstrapped admin."
     },
     "/posts/{postId}": {
       "schema": { "$ref": "#/entities/Post" },

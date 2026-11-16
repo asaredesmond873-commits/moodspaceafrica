@@ -6,6 +6,16 @@ export type MediaFormat = 'text' | 'photo' | 'video' | 'mix';
 export type PostVisibility = 'public' | 'archived';
 export type FormFieldType = 'text' | 'email' | 'tel' | 'textarea' | 'select' | 'checkbox';
 
+export type VerificationStatus = 'pending' | 'approved' | 'rejected';
+export type VerificationCategory = 'creator' | 'business' | 'organizer' | 'media';
+export type VerificationIdType =
+  | 'ghana_card'
+  | 'business_reg'
+  | 'social_handle'
+  | 'website_press';
+
+export const ADMIN_EMAIL = 'asaredesmond873@gmail.com';
+
 export interface FormField {
   id: string;
   label: string;
@@ -29,6 +39,33 @@ export interface PublicProfile {
   accountType: AccountType;
   avatarUrl: string;
   isPublic: boolean;
+  badgeVerified?: boolean;
+  verifiedLabel?: string;
+  createdAt: Timestamp | null;
+  updatedAt: Timestamp | null;
+}
+
+export interface VerifiedBadgeInfo {
+  uid: string;
+  verifiedLabel: string;
+}
+
+export interface VerificationRequest {
+  uid: string;
+  requesterName: string;
+  requesterLocation: string;
+  accountType: AccountType;
+  legalOrBrandName: string;
+  category: VerificationCategory;
+  idType: VerificationIdType;
+  idReference: string;
+  proofLink: string;
+  proofImageUrl: string;
+  note: string;
+  proposedLabel: string;
+  status: VerificationStatus;
+  reviewNote: string;
+  reviewedBy: string;
   createdAt: Timestamp | null;
   updatedAt: Timestamp | null;
 }
@@ -96,6 +133,13 @@ export const SCHEMA_LIMITS = {
   FORM_FIELDS_MAX: 15,
   FORM_FIELD_LABEL_MAX: 100,
   COMMENT_MAX: 1000,
+  VERIFICATION_LEGAL_NAME_MAX: 120,
+  VERIFICATION_REF_MAX: 140,
+  VERIFICATION_LINK_MAX: 500,
+  VERIFICATION_PROOF_IMAGE_MAX: 450000,
+  VERIFICATION_NOTE_MAX: 1000,
+  VERIFICATION_LABEL_MAX: 60,
+  VERIFICATION_REVIEW_NOTE_MAX: 500,
 } as const;
 
 export const AFRICAN_CITIES = [

@@ -1,4 +1,6 @@
 import {
+  BadgeCheck,
+  Bookmark,
   Calendar,
   Camera,
   Check,
@@ -21,13 +23,16 @@ import {
   subscribePostComments,
   togglePostLike,
 } from '../services/firestoreService';
-import { type Post, type PostComment, SCHEMA_LIMITS } from '../types';
+import { type Post, type PostComment, SCHEMA_LIMITS, type VerifiedBadgeInfo } from '../types';
 import { formatTimestamp, parseVideoUrl } from '../utils/media';
 
 interface PostCardProps {
   post: Post;
+  verifiedBadges?: Record<string, VerifiedBadgeInfo>;
+  isSaved?: boolean;
   isHighlighted?: boolean;
   onOpenForm: (post: Post) => void;
+  onToggleSaved?: (postId: string) => void;
   onNotify: (message: string) => void;
 }
 
@@ -46,8 +51,11 @@ const FORMAT_LABEL: Record<Post['mediaFormat'], string> = {
 
 export function PostCard({
   post,
+  verifiedBadges = {},
+  isSaved = false,
   isHighlighted = false,
   onOpenForm,
+  onToggleSaved,
   onNotify,
 }: PostCardProps) {
   const { user, profile, signInWithGoogle } = useAuth();
@@ -61,6 +69,8 @@ export function PostCard({
   const [imgError, setImgError] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
   const [expanded, setExpanded] = useState(false);
+
+  const authorBadge = verifiedBadges[post.authorId];
 
   useEffect(() => {
     setImgError(false);
@@ -115,12 +125,32 @@ export function PostCard({
 
   const handleShare = async () => {
     const shareUrl = `${window.location.origin}/#post=${post.id}`;
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      onNotify('Post link copied to clipboard');
-    } catch {
-      onNotify('Share link ready in browser address bar');
+    let sharedNatively = false;
+
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({
+          title: post.title,
+          text: `${post.title} — ${post.authorName} on MoodSpace Africa`,
+          url: shareUrl,
+        });
+        sharedNatively = true;
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          return;
+        }
+      }
     }
+
+    if (!sharedNatively) {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        onNotify('Post link copied to clipboard');
+      } catch {
+        onNotify('Share link ready in browser address bar');
+      }
+    }
+
     if (user) {
       try {
         await incrementPostShare(post);
@@ -208,9 +238,20 @@ export function PostCard({
           )}
 
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-[#141413] truncate">
-              {post.authorName}
-            </p>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <p className="text-sm font-semibold text-[#141413] truncate">
+                {post.authorName}
+              </p>
+              {authorBadge && (
+                <span
+                  title={authorBadge.verifiedLabel}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0E7C5B] shrink-0"
+                >
+                  <BadgeCheck className="w-4 h-4 fill-[#0E7C5B] text-white shrink-0" />
+                  <span className="hidden sm:inline">{authorBadge.verifiedLabel}</span>
+                </span>
+              )}
+            </div>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-[#5E5D59]">
               <span className="font-medium text-[#0E7C5B]">{CATEGORY_LABEL[post.category]}</span>
               <span aria-hidden="true">·</span>
@@ -226,6 +267,22 @@ export function PostCard({
             </div>
           </div>
         </div>
+
+        {onToggleSaved && (
+          <button
+            type="button"
+            onClick={() => onToggleSaved(post.id)}
+            aria-label={isSaved ? 'Remove saved post' : 'Save post'}
+            title={isSaved ? 'Saved to bookmarks' : 'Save post'}
+            className={`p-2 rounded-lg transition-colors shrink-0 cursor-pointer ${
+              isSaved
+                ? 'text-[#0E7C5B] bg-[#0E7C5B]/10'
+                : 'text-[#5E5D59] hover:text-[#141413] hover:bg-[#FAF9F7]'
+            }`}
+          >
+            <Bookmark className={`w-4 h-4 ${isSaved ? 'fill-[#0E7C5B]' : ''}`} />
+          </button>
+        )}
       </div>
 
       {/* Headline & Prose */}
@@ -247,7 +304,7 @@ export function PostCard({
         )}
       </div>
 
-      {/* Event Details / Promo Offer Strip (clean unboxed hairline rows, no pills) */}
+      {/* Event Details / Promo Offer Strip */}
       {(post.eventDate || post.eventLocation || post.promoCode) && (
         <div className="mt-4 pt-3.5 border-t border-[#F0EEE9] flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-[#353431]">
           {post.eventDate && (
@@ -282,7 +339,7 @@ export function PostCard({
         </div>
       )}
 
-      {/* Photo Media (shown for photo or mix posts, or as fallback when no valid video) */}
+      {/* Photo Media */}
       {post.photoUrl && (post.mediaFormat !== 'video' || !parsedVideo || parsedVideo.kind === 'invalid') && (
         <div className="mt-4 rounded-xl overflow-hidden border border-[#E7E5E0] bg-[#FAF9F7] flex items-center justify-center">
           {!imgError ? (
@@ -421,16 +478,22 @@ export function PostCard({
               {comments.map((comment) => {
                 const canDelete =
                   user && (user.uid === comment.authorId || user.uid === post.authorId);
+                const commenterBadge = verifiedBadges[comment.authorId];
                 return (
                   <div
                     key={comment.id}
                     className="flex items-start justify-between gap-3 py-2 border-b border-[#F3F1EC] last:border-b-0"
                   >
                     <div className="space-y-0.5 min-w-0">
-                      <div className="flex items-center gap-2 text-xs">
+                      <div className="flex items-center gap-1.5 text-xs">
                         <span className="font-semibold text-[#141413]">
                           {comment.authorName}
                         </span>
+                        {commenterBadge && (
+                          <span title={commenterBadge.verifiedLabel}>
+                            <BadgeCheck className="w-3.5 h-3.5 fill-[#0E7C5B] text-white inline" />
+                          </span>
+                        )}
                         <span className="text-[#5E5D59]">
                           {formatTimestamp(comment.createdAt)}
                         </span>
