@@ -458,7 +458,7 @@ export function PostCard({
               placeholder={
                 user ? 'Write a welcoming comment...' : 'Sign in with Google to comment...'
               }
-              className="flex-1 px-3.5 py-2 text-sm bg-[#FAF9F7] border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B] focus:bg-white"
+              className="flex-1 min-w-0 px-3.5 py-2 text-sm bg-[#FAF9F7] border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B] focus:bg-white"
             />
             <button
               type="submit"

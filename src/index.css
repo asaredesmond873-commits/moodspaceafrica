@@ -7,10 +7,23 @@
 }
 
 @layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    touch-action: manipulation;
+  }
+
   body {
     font-family: var(--font-sans);
     background-color: #FAF9F7;
     color: #141413;
+  }
+
+  input,
+  textarea,
+  select,
+  button {
+    touch-action: manipulation;
   }
 
   h1, h2, h3, .font-display {
