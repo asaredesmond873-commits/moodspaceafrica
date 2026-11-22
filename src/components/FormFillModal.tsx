@@ -63,7 +63,6 @@ export function FormFillModal({ post, onClose, onSubmitted }: FormFillModalProps
     if (!user || !activeProfile) {
       activeProfile = await signInWithGoogle();
       if (!activeProfile) {
-        setErrorMsg('Please sign in with Google to submit your response securely.');
         return;
       }
     }

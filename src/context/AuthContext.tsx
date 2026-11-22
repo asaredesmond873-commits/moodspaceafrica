@@ -1,4 +1,5 @@
 import {
+  getRedirectResult,
   onAuthStateChanged,
   signInWithPopup,
   signOut,
@@ -16,6 +17,29 @@ import {
 import { auth, db, googleProvider } from '../firebase';
 import { cleanupAccidentalAutoSeededPosts, ensureUserProfile } from '../services/firestoreService';
 import type { PublicProfile } from '../types';
+
+const SILENT_AUTH_CODES = new Set([
+  'auth/popup-closed-by-user',
+  'auth/cancelled-popup-request',
+  'auth/popup-blocked',
+  'auth/user-cancelled',
+  'auth/redirect-cancelled-by-user',
+  'auth/redirect-operation-pending',
+]);
+
+function isSilentAuthError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const code = 'code' in err && typeof err.code === 'string' ? err.code : '';
+  if (SILENT_AUTH_CODES.has(code)) return true;
+  const msg = 'message' in err && typeof err.message === 'string' ? err.message : '';
+  return (
+    msg.includes('popup-closed-by-user') ||
+    msg.includes('cancelled-popup-request') ||
+    msg.includes('popup-blocked') ||
+    msg.includes('user-cancelled') ||
+    msg.includes('redirect-cancelled-by-user')
+  );
+}
 
 interface AuthContextValue {
   user: User | null;
@@ -39,7 +63,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
+    let mounted = true;
     let unsubProfile: (() => void) | null = null;
+
+    void getRedirectResult(auth)
+      .then(async (result) => {
+        if (!mounted || !result?.user) return;
+        const loaded = await ensureUserProfile(result.user);
+        if (!mounted) return;
+        setProfile(loaded);
+        setAuthError(null);
+        void cleanupAccidentalAutoSeededPosts(loaded.uid).catch(() => {});
+      })
+      .catch((err) => {
+        if (!mounted) return;
+        if (isSilentAuthError(err)) {
+          setAuthError(null);
+          return;
+        }
+        const msg = err instanceof Error ? err.message : 'Unable to complete Google sign-in.';
+        setAuthError(msg);
+      });
+
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted && mounted) {
+        setAuthError(null);
+        setAuthBusy(false);
+      }
+    };
+    window.addEventListener('pageshow', handlePageShow);
 
     const unsubAuth = onAuthStateChanged(auth, async (nextUser) => {
       if (unsubProfile) {
@@ -51,25 +103,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (nextUser) {
         try {
           const loaded = await ensureUserProfile(nextUser);
+          if (!mounted) return;
           setProfile(loaded);
           setAuthError(null);
           void cleanupAccidentalAutoSeededPosts(loaded.uid).catch(() => {});
 
           unsubProfile = onSnapshot(doc(db, 'publicProfiles', nextUser.uid), (snap) => {
-            if (snap.exists()) {
+            if (snap.exists() && mounted) {
               setProfile(snap.data() as PublicProfile);
             }
           });
         } catch (err) {
-          setAuthError(err instanceof Error ? err.message : 'Unable to load your profile.');
+          if (mounted) {
+            setAuthError(err instanceof Error ? err.message : 'Unable to load your profile.');
+          }
         }
       } else {
         setProfile(null);
       }
-      setAuthReady(true);
+      if (mounted) {
+        setAuthReady(true);
+      }
     });
 
     return () => {
+      mounted = false;
+      window.removeEventListener('pageshow', handlePageShow);
       if (unsubProfile) unsubProfile();
       unsubAuth();
     };
@@ -82,10 +141,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const cred = await signInWithPopup(auth, googleProvider);
       const loaded = await ensureUserProfile(cred.user);
       setProfile(loaded);
+      setAuthError(null);
       void cleanupAccidentalAutoSeededPosts(loaded.uid).catch(() => {});
       return loaded;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Sign-in was cancelled or failed.';
+      if (isSilentAuthError(err)) {
+        setAuthError(null);
+        return null;
+      }
+      const msg = err instanceof Error ? err.message : 'Unable to sign in with Google.';
       setAuthError(msg);
       return null;
     } finally {
