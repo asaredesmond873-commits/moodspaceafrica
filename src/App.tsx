@@ -185,10 +185,28 @@ function MoodSpaceShell() {
       uid = signed.uid;
     }
     const currentlySaved = savedPostIds.has(postId);
+    setSavedPostIds((prev) => {
+      const next = new Set(prev);
+      if (currentlySaved) {
+        next.delete(postId);
+      } else {
+        next.add(postId);
+      }
+      return next;
+    });
     try {
       await toggleSavedPost(postId, uid, currentlySaved);
       showToast(currentlySaved ? 'Removed from saved posts' : 'Saved to your bookmarks');
     } catch {
+      setSavedPostIds((prev) => {
+        const next = new Set(prev);
+        if (currentlySaved) {
+          next.add(postId);
+        } else {
+          next.delete(postId);
+        }
+        return next;
+      });
       showToast('Could not update saved bookmark.');
     }
   };

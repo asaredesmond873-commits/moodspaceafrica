@@ -200,7 +200,9 @@ export function DashboardView({
       setPostComments([]);
       return;
     }
-    const unsub = subscribePostComments(moderatingPostId, setPostComments);
+    const unsub = subscribePostComments(moderatingPostId, setPostComments, () => {
+      onNotify('Could not load comments for moderation.');
+    });
     return () => unsub();
   }, [moderatingPostId]);
 

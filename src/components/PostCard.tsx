@@ -13,7 +13,7 @@ import {
   Tag,
   Trash2,
 } from 'lucide-react';
-import { useEffect, useState, type FormEvent } from 'react';
+import { memo, useEffect, useState, type FormEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   addPostComment,
@@ -49,7 +49,7 @@ const FORMAT_LABEL: Record<Post['mediaFormat'], string> = {
   mix: 'Mixed Media',
 };
 
-export function PostCard({
+export const PostCard = memo(function PostCard({
   post,
   verifiedBadges = {},
   isSaved = false,
@@ -60,9 +60,12 @@ export function PostCard({
 }: PostCardProps) {
   const { user, profile, signInWithGoogle } = useAuth();
   const [liked, setLiked] = useState(false);
+  const [optimisticLikesCount, setOptimisticLikesCount] = useState<number | null>(null);
   const [likeBusy, setLikeBusy] = useState(false);
-  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(() => isHighlighted && post.commentsCount > 0);
   const [comments, setComments] = useState<PostComment[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentsError, setCommentsError] = useState<string | null>(null);
   const [commentText, setCommentText] = useState('');
   const [commentBusy, setCommentBusy] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
@@ -71,6 +74,11 @@ export function PostCard({
   const [expanded, setExpanded] = useState(false);
 
   const authorBadge = verifiedBadges[post.authorId];
+  const displayedLikesCount = optimisticLikesCount ?? post.likesCount;
+
+  useEffect(() => {
+    setOptimisticLikesCount(null);
+  }, [post.likesCount]);
 
   useEffect(() => {
     setImgError(false);
@@ -100,7 +108,20 @@ export function PostCard({
 
   useEffect(() => {
     if (!commentsOpen) return;
-    const unsub = subscribePostComments(post.id, setComments);
+    setCommentsLoading(true);
+    setCommentsError(null);
+    const unsub = subscribePostComments(
+      post.id,
+      (list) => {
+        setComments(list);
+        setCommentsLoading(false);
+        setCommentsError(null);
+      },
+      () => {
+        setCommentsLoading(false);
+        setCommentsError('Could not load comments right now.');
+      }
+    );
     return () => unsub();
   }, [commentsOpen, post.id]);
 
@@ -112,11 +133,20 @@ export function PostCard({
       if (!signedProfile) return;
       uid = signedProfile.uid;
     }
+
+    const prevLiked = liked;
+    const nextLiked = !prevLiked;
+    const prevDisplayed = displayedLikesCount;
+
+    setLiked(nextLiked);
+    setOptimisticLikesCount(Math.max(0, prevDisplayed + (nextLiked ? 1 : -1)));
     setLikeBusy(true);
+
     try {
-      await togglePostLike(post, uid, liked);
-      setLiked(!liked);
+      await togglePostLike(post, uid, prevLiked);
     } catch {
+      setLiked(prevLiked);
+      setOptimisticLikesCount(null);
       onNotify('Could not update like right now.');
     } finally {
       setLikeBusy(false);
@@ -172,10 +202,24 @@ export function PostCard({
     }
 
     setCommentBusy(true);
+    setCommentText('');
+    const tempId = `temp_${Date.now()}`;
+    const optimisticComment: PostComment = {
+      id: tempId,
+      postId: post.id,
+      authorId: activeProfile.uid,
+      authorName: activeProfile.displayName || 'Member',
+      authorAvatar: activeProfile.avatarUrl || '',
+      text: trimmed,
+      createdAt: null,
+    };
+    setComments((prev) => [...prev, optimisticComment]);
+
     try {
       await addPostComment(post, activeProfile, trimmed);
-      setCommentText('');
     } catch {
+      setComments((prev) => prev.filter((c) => c.id !== tempId));
+      setCommentText(trimmed);
       onNotify('Unable to post comment.');
     } finally {
       setCommentBusy(false);
@@ -183,10 +227,13 @@ export function PostCard({
   };
 
   const handleDeleteComment = async (commentId: string) => {
+    const prevComments = comments;
+    setComments((curr) => curr.filter((c) => c.id !== commentId));
     try {
       await deletePostComment(post, commentId);
       onNotify('Comment removed');
     } catch {
+      setComments(prevComments);
       onNotify('Unable to delete comment.');
     }
   };
@@ -347,6 +394,7 @@ export function PostCard({
               src={post.photoUrl}
               alt={post.title}
               referrerPolicy="no-referrer"
+              loading="lazy"
               decoding="async"
               onError={() => setImgError(true)}
               className="w-full max-h-[560px] object-contain"
@@ -400,7 +448,7 @@ export function PostCard({
             }`}
           >
             <Heart className={`w-4 h-4 ${liked ? 'fill-[#0E7C5B]' : ''}`} />
-            <span className="tabular-nums">{post.likesCount}</span>
+            <span className="tabular-nums">{displayedLikesCount}</span>
             <span className="hidden sm:inline">Like</span>
           </button>
 
@@ -469,15 +517,21 @@ export function PostCard({
             </button>
           </form>
 
-          {comments.length === 0 ? (
+          {commentsLoading ? (
+            <p className="text-xs text-[#5E5D59]">Loading comments...</p>
+          ) : commentsError ? (
+            <p className="text-xs text-[#B91C1C]">{commentsError}</p>
+          ) : comments.length === 0 ? (
             <p className="text-xs text-[#5E5D59]">
               No comments yet. Start the conversation.
             </p>
           ) : (
             <div className="space-y-3">
               {comments.map((comment) => {
+                const isTemp = comment.id.startsWith('temp_');
                 const canDelete =
-                  user && (user.uid === comment.authorId || user.uid === post.authorId);
+                  !isTemp &&
+                  Boolean(user && (user.uid === comment.authorId || user.uid === post.authorId));
                 const commenterBadge = verifiedBadges[comment.authorId];
                 return (
                   <div
@@ -495,7 +549,7 @@ export function PostCard({
                           </span>
                         )}
                         <span className="text-[#5E5D59]">
-                          {formatTimestamp(comment.createdAt)}
+                          {isTemp ? 'Sending...' : formatTimestamp(comment.createdAt)}
                         </span>
                       </div>
                       <p className="text-sm text-[#353431] break-words">{comment.text}</p>
@@ -520,4 +574,4 @@ export function PostCard({
       )}
     </article>
   );
-}
+});

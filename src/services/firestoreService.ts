@@ -5,8 +5,8 @@ import {
   doc,
   getDoc,
   getDocs,
+  increment,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -55,50 +55,94 @@ function sanitizeFormConfig(config: FormConfig): FormConfig {
   };
 }
 
-export async function ensureUserProfile(user: User): Promise<PublicProfile> {
-  const publicPath = `publicProfiles/${user.uid}`;
-  const privatePath = `userPrivate/${user.uid}`;
+const inFlightProfiles = new Map<string, Promise<PublicProfile>>();
 
-  try {
-    const publicRef = doc(db, 'publicProfiles', user.uid);
-    const publicSnap = await getDoc(publicRef);
-
-    const privateRef = doc(db, 'userPrivate', user.uid);
-    const privateSnap = await getDoc(privateRef);
-
-    if (!privateSnap.exists()) {
-      await setDoc(privateRef, {
-        uid: user.uid,
-        email: clampString(user.email || '', 200),
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-    }
-
-    if (publicSnap.exists()) {
-      return publicSnap.data() as PublicProfile;
-    }
-
-    const initialProfile = {
-      uid: user.uid,
-      displayName: clampString(user.displayName || 'MoodSpace Member', SCHEMA_LIMITS.DISPLAY_NAME_MAX),
-      bio: '',
-      location: 'Accra, Ghana',
-      accountType: 'creator' as AccountType,
-      avatarUrl: clampString(user.photoURL || '', SCHEMA_LIMITS.AVATAR_URL_MAX),
-      isPublic: true,
-      badgeVerified: false,
-      verifiedLabel: '',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    };
-
-    await setDoc(publicRef, initialProfile);
-    const createdSnap = await getDoc(publicRef);
-    return (createdSnap.exists() ? createdSnap.data() : initialProfile) as PublicProfile;
-  } catch (error) {
-    return handleFirestoreError(error, OperationType.WRITE, `${publicPath} | ${privatePath}`);
+export function ensureUserProfile(user: User): Promise<PublicProfile> {
+  const existing = inFlightProfiles.get(user.uid);
+  if (existing) {
+    return existing;
   }
+
+  const task = (async (): Promise<PublicProfile> => {
+    const publicPath = `publicProfiles/${user.uid}`;
+    const privatePath = `userPrivate/${user.uid}`;
+
+    try {
+      const publicRef = doc(db, 'publicProfiles', user.uid);
+      const privateRef = doc(db, 'userPrivate', user.uid);
+
+      const [publicSnap, privateSnap] = await Promise.all([
+        getDoc(publicRef),
+        getDoc(privateRef),
+      ]);
+
+      const needsPrivate = !privateSnap.exists();
+      const needsPublic = !publicSnap.exists();
+
+      if (!needsPrivate && !needsPublic) {
+        return publicSnap.data() as PublicProfile;
+      }
+
+      const fallbackName =
+        user.displayName || user.email?.split('@')[0] || 'MoodSpace Member';
+      const initialProfile: PublicProfile = {
+        uid: user.uid,
+        displayName: clampString(fallbackName, SCHEMA_LIMITS.DISPLAY_NAME_MAX) || 'MoodSpace Member',
+        bio: '',
+        location: 'Accra, Ghana',
+        accountType: 'creator',
+        avatarUrl: clampString(user.photoURL || '', SCHEMA_LIMITS.AVATAR_URL_MAX),
+        isPublic: true,
+        badgeVerified: false,
+        verifiedLabel: '',
+        createdAt: null,
+        updatedAt: null,
+      };
+
+      const batch = writeBatch(db);
+      if (needsPrivate) {
+        batch.set(privateRef, {
+          uid: user.uid,
+          email: clampString(user.email || '', 200),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+      if (needsPublic) {
+        batch.set(publicRef, {
+          uid: initialProfile.uid,
+          displayName: initialProfile.displayName,
+          bio: initialProfile.bio,
+          location: initialProfile.location,
+          accountType: initialProfile.accountType,
+          avatarUrl: initialProfile.avatarUrl,
+          isPublic: true,
+          badgeVerified: false,
+          verifiedLabel: '',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      await batch.commit();
+
+      if (publicSnap.exists()) {
+        return publicSnap.data() as PublicProfile;
+      }
+      return initialProfile;
+    } catch (error) {
+      return handleFirestoreError(error, OperationType.WRITE, `${publicPath} | ${privatePath}`);
+    }
+  })();
+
+  inFlightProfiles.set(user.uid, task);
+  void task.finally(() => {
+    if (inFlightProfiles.get(user.uid) === task) {
+      inFlightProfiles.delete(user.uid);
+    }
+  });
+
+  return task;
 }
 
 export async function updateUserProfile(
@@ -367,7 +411,7 @@ export async function togglePostLike(post: Post, uid: string, currentlyLiked: bo
     if (currentlyLiked) {
       batch.delete(likeRef);
       batch.update(postRef, {
-        likesCount: Math.max(0, post.likesCount - 1),
+        likesCount: increment(-1),
         updatedAt: serverTimestamp(),
       });
     } else {
@@ -377,7 +421,7 @@ export async function togglePostLike(post: Post, uid: string, currentlyLiked: bo
         createdAt: serverTimestamp(),
       });
       batch.update(postRef, {
-        likesCount: post.likesCount + 1,
+        likesCount: increment(1),
         updatedAt: serverTimestamp(),
       });
     }
@@ -392,7 +436,7 @@ export async function incrementPostShare(post: Post): Promise<void> {
   const path = `posts/${post.id}`;
   try {
     await updateDoc(doc(db, 'posts', post.id), {
-      sharesCount: post.sharesCount + 1,
+      sharesCount: increment(1),
       updatedAt: serverTimestamp(),
     });
   } catch (error) {
@@ -454,11 +498,14 @@ export function subscribePostComments(
   onError?: (err: Error) => void
 ) {
   const path = `posts/${postId}/comments`;
-  const q = query(collection(db, 'posts', postId, 'comments'), orderBy('createdAt', 'asc'));
+  const q = query(collection(db, 'posts', postId, 'comments'), where('postId', '==', postId));
   return onSnapshot(
     q,
     (snap) => {
-      onData(snap.docs.map((d) => d.data() as PostComment));
+      const sorted = snap.docs
+        .map((d) => d.data() as PostComment)
+        .sort((a, b) => (a.createdAt?.toMillis() ?? Date.now()) - (b.createdAt?.toMillis() ?? Date.now()));
+      onData(sorted);
     },
     (error) => {
       try {
@@ -491,7 +538,7 @@ export async function addPostComment(
       createdAt: serverTimestamp(),
     });
     batch.update(doc(db, 'posts', post.id), {
-      commentsCount: post.commentsCount + 1,
+      commentsCount: increment(1),
       updatedAt: serverTimestamp(),
     });
     await batch.commit();
@@ -506,7 +553,7 @@ export async function deletePostComment(post: Post, commentId: string): Promise<
     const batch = writeBatch(db);
     batch.delete(doc(db, 'posts', post.id, 'comments', commentId));
     batch.update(doc(db, 'posts', post.id), {
-      commentsCount: Math.max(0, post.commentsCount - 1),
+      commentsCount: increment(-1),
       updatedAt: serverTimestamp(),
     });
     await batch.commit();
@@ -546,7 +593,7 @@ export async function submitPostForm(
       createdAt: serverTimestamp(),
     });
     batch.update(doc(db, 'posts', post.id), {
-      submissionsCount: post.submissionsCount + 1,
+      submissionsCount: increment(1),
       updatedAt: serverTimestamp(),
     });
     await batch.commit();

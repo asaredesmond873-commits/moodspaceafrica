@@ -1,4 +1,4 @@
-import { BadgeCheck, Bookmark, Search } from 'lucide-react';
+import { BadgeCheck, Bookmark, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import type { MediaFormat, Post, PostCategory, VerifiedBadgeInfo } from '../types';
@@ -33,7 +33,7 @@ export function DiscoverFeed({
   onToggleSaved,
   onNotify,
 }: DiscoverFeedProps) {
-  const { user, signInWithGoogle } = useAuth();
+  const { user, authBusy, signInWithGoogle } = useAuth();
   const [categoryFilter, setCategoryFilter] = useState<'all' | PostCategory>(initialCategory);
   const [formatFilter, setFormatFilter] = useState<'all' | MediaFormat>('all');
   const [sortMode, setSortMode] = useState<FeedSortMode>('latest');
@@ -50,20 +50,25 @@ export function DiscoverFeed({
   }, [user, savedOnly]);
 
   const filteredPosts = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+    const terms = searchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const filtered = posts.filter((post) => {
       if (categoryFilter !== 'all' && post.category !== categoryFilter) return false;
       if (formatFilter !== 'all' && post.mediaFormat !== formatFilter) return false;
       if (verifiedOnly && !verifiedBadges[post.authorId]) return false;
       if (savedOnly && !savedPostIds.has(post.id)) return false;
-      if (!q) return true;
-      return (
-        post.title.toLowerCase().includes(q) ||
-        post.content.toLowerCase().includes(q) ||
-        post.authorName.toLowerCase().includes(q) ||
-        post.authorLocation.toLowerCase().includes(q) ||
-        post.eventLocation.toLowerCase().includes(q)
-      );
+      if (terms.length === 0) return true;
+      const haystack = [
+        post.title,
+        post.content,
+        post.authorName,
+        post.authorLocation,
+        post.eventLocation,
+        post.promoCode,
+        post.category,
+      ]
+        .join(' ')
+        .toLowerCase();
+      return terms.every((term) => haystack.includes(term));
     });
 
     if (sortMode === 'popular') {
@@ -96,7 +101,59 @@ export function DiscoverFeed({
     Boolean(searchQuery.trim());
 
   return (
-    <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-8">
+    <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-7">
+      {/* Top Feed Search Bar */}
+      <section aria-label="Search posts" className="bg-white border border-[#E7E5E0] rounded-2xl p-3 sm:p-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="relative flex-1 min-w-0">
+            <Search className="w-4 h-4 text-[#5E5D59] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="search"
+              aria-label="Search posts by keywords or creator names"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  document
+                    .getElementById('discover-stream')
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+              }}
+              placeholder="Search keywords, creator names, Accra, promos, or events..."
+              className="w-full pl-10 pr-9 py-2.5 text-sm bg-[#FAF9F7] border border-[#D4D1CA] rounded-xl text-[#141413] placeholder:text-[#5E5D59] focus:outline-none focus:border-[#0E7C5B] focus:bg-white transition-colors"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                aria-label="Clear search"
+                className="p-1 text-[#5E5D59] hover:text-[#141413] absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between sm:justify-end gap-3 text-xs text-[#5E5D59] shrink-0 px-1">
+            <span className="tabular-nums font-medium">
+              {loading
+                ? 'Syncing feed...'
+                : `${filteredPosts.length} ${filteredPosts.length === 1 ? 'post' : 'posts'}${
+                    hasActiveFilters ? ` of ${posts.length}` : ''
+                  }`}
+            </span>
+            {searchQuery.trim() && initialCategory === 'all' && (
+              <a
+                href="#discover-stream"
+                className="font-semibold text-[#0E7C5B] hover:underline whitespace-nowrap"
+              >
+                View results
+              </a>
+            )}
+          </div>
+        </div>
+      </section>
+
       {/* Split Hero Section */}
       {initialCategory === 'all' && (
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch bg-white border border-[#E7E5E0] rounded-2xl p-6 sm:p-8">
@@ -137,10 +194,11 @@ export function DiscoverFeed({
                 <>
                   <button
                     type="button"
+                    disabled={authBusy}
                     onClick={() => void signInWithGoogle()}
-                    className="px-5 py-2.5 text-sm font-semibold text-white bg-[#0E7C5B] rounded-lg hover:bg-[#095E44] transition-colors whitespace-nowrap cursor-pointer"
+                    className="px-5 py-2.5 text-sm font-semibold text-white bg-[#0E7C5B] rounded-lg hover:bg-[#095E44] disabled:opacity-60 transition-colors whitespace-nowrap cursor-pointer"
                   >
-                    Join with Google
+                    {authBusy ? 'Signing In...' : 'Join with Google'}
                   </button>
                   <a
                     href="#discover-stream"
@@ -168,100 +226,103 @@ export function DiscoverFeed({
         </section>
       )}
 
-      {/* Filter, Sort & Search Toolbar */}
+      {/* Filter & Sort Toolbar */}
       <section
         id="discover-stream"
-        className="flex flex-col gap-3 pb-4 border-b border-[#E7E5E0]"
+        className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-[#E7E5E0]"
       >
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="flex items-center gap-1 p-1 bg-white border border-[#E7E5E0] rounded-lg overflow-x-auto">
-              {(
-                [
-                  { id: 'all', label: 'All Posts' },
-                  { id: 'announcement', label: 'Announcements' },
-                  { id: 'event', label: 'Events' },
-                  { id: 'promo', label: 'Promos' },
-                ] as const
-              ).map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setCategoryFilter(tab.id)}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                    categoryFilter === tab.id
-                      ? 'bg-[#141413] text-white'
-                      : 'text-[#5E5D59] hover:text-[#141413]'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center gap-1 p-1 bg-white border border-[#E7E5E0] rounded-lg overflow-x-auto">
+            {(
+              [
+                { id: 'all', label: 'All Posts' },
+                { id: 'announcement', label: 'Announcements' },
+                { id: 'event', label: 'Events' },
+                { id: 'promo', label: 'Promos' },
+              ] as const
+            ).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setCategoryFilter(tab.id)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  categoryFilter === tab.id
+                    ? 'bg-[#141413] text-white'
+                    : 'text-[#5E5D59] hover:text-[#141413]'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
 
-            <select
-              aria-label="Filter by media format"
-              value={formatFilter}
-              onChange={(e) => setFormatFilter(e.target.value as 'all' | MediaFormat)}
-              className="px-3 py-2 text-xs font-semibold bg-white border border-[#E7E5E0] rounded-lg text-[#141413] focus:outline-none focus:border-[#0E7C5B]"
-            >
-              <option value="all">All Media</option>
-              <option value="text">Text Only</option>
-              <option value="photo">Photo</option>
-              <option value="video">Video</option>
-              <option value="mix">Mixed Media</option>
-            </select>
+          <select
+            aria-label="Filter by media format"
+            value={formatFilter}
+            onChange={(e) => setFormatFilter(e.target.value as 'all' | MediaFormat)}
+            className="px-3 py-2 text-xs font-semibold bg-white border border-[#E7E5E0] rounded-lg text-[#141413] focus:outline-none focus:border-[#0E7C5B]"
+          >
+            <option value="all">All Media</option>
+            <option value="text">Text Only</option>
+            <option value="photo">Photo</option>
+            <option value="video">Video</option>
+            <option value="mix">Mixed Media</option>
+          </select>
 
-            <select
-              aria-label="Sort posts"
-              value={sortMode}
-              onChange={(e) => setSortMode(e.target.value as FeedSortMode)}
-              className="px-3 py-2 text-xs font-semibold bg-white border border-[#E7E5E0] rounded-lg text-[#141413] focus:outline-none focus:border-[#0E7C5B]"
-            >
-              <option value="latest">Latest First</option>
-              <option value="popular">Most Engaged</option>
-            </select>
+          <select
+            aria-label="Sort posts"
+            value={sortMode}
+            onChange={(e) => setSortMode(e.target.value as FeedSortMode)}
+            className="px-3 py-2 text-xs font-semibold bg-white border border-[#E7E5E0] rounded-lg text-[#141413] focus:outline-none focus:border-[#0E7C5B]"
+          >
+            <option value="latest">Latest First</option>
+            <option value="popular">Most Engaged</option>
+          </select>
 
+          <button
+            type="button"
+            onClick={() => setVerifiedOnly(!verifiedOnly)}
+            className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              verifiedOnly
+                ? 'bg-[#0E7C5B] text-white border-[#0E7C5B]'
+                : 'bg-white text-[#5E5D59] border-[#E7E5E0] hover:text-[#141413]'
+            }`}
+          >
+            <BadgeCheck className="w-3.5 h-3.5" />
+            <span>Verified Only</span>
+          </button>
+
+          {user && (
             <button
               type="button"
-              onClick={() => setVerifiedOnly(!verifiedOnly)}
+              onClick={() => setSavedOnly(!savedOnly)}
               className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                verifiedOnly
-                  ? 'bg-[#0E7C5B] text-white border-[#0E7C5B]'
+                savedOnly
+                  ? 'bg-[#141413] text-white border-[#141413]'
                   : 'bg-white text-[#5E5D59] border-[#E7E5E0] hover:text-[#141413]'
               }`}
             >
-              <BadgeCheck className="w-3.5 h-3.5" />
-              <span>Verified Only</span>
+              <Bookmark className="w-3.5 h-3.5" />
+              <span>Saved ({savedPostIds.size})</span>
             </button>
-
-            {user && (
-              <button
-                type="button"
-                onClick={() => setSavedOnly(!savedOnly)}
-                className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  savedOnly
-                    ? 'bg-[#141413] text-white border-[#141413]'
-                    : 'bg-white text-[#5E5D59] border-[#E7E5E0] hover:text-[#141413]'
-                }`}
-              >
-                <Bookmark className="w-3.5 h-3.5" />
-                <span>Saved ({savedPostIds.size})</span>
-              </button>
-            )}
-          </div>
-
-          <div className="relative w-full lg:w-72 shrink-0">
-            <Search className="w-4 h-4 text-[#5E5D59] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search Accra, Kumasi, event, or promo..."
-              className="w-full pl-9 pr-3.5 py-2 text-sm bg-white border border-[#E7E5E0] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
-            />
-          </div>
+          )}
         </div>
+
+        {hasActiveFilters && (
+          <button
+            type="button"
+            onClick={() => {
+              setCategoryFilter('all');
+              setFormatFilter('all');
+              setVerifiedOnly(false);
+              setSavedOnly(false);
+              setSearchQuery('');
+            }}
+            className="text-xs font-semibold text-[#0E7C5B] hover:underline whitespace-nowrap cursor-pointer"
+          >
+            Clear All Filters
+          </button>
+        )}
       </section>
 
       {/* Feed Stream */}
@@ -301,10 +362,11 @@ export function DiscoverFeed({
                   ) : (
                     <button
                       type="button"
+                      disabled={authBusy}
                       onClick={() => void signInWithGoogle()}
-                      className="px-5 py-2.5 text-sm font-semibold text-white bg-[#0E7C5B] rounded-lg hover:bg-[#095E44] cursor-pointer"
+                      className="px-5 py-2.5 text-sm font-semibold text-white bg-[#0E7C5B] rounded-lg hover:bg-[#095E44] disabled:opacity-60 cursor-pointer"
                     >
-                      Join with Google to Post
+                      {authBusy ? 'Signing In...' : 'Join with Google to Post'}
                     </button>
                   )}
                 </div>
