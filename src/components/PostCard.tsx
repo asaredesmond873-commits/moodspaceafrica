@@ -12,6 +12,8 @@ import {
   Share2,
   Tag,
   Trash2,
+  UserCheck,
+  UserPlus,
 } from 'lucide-react';
 import { memo, useEffect, useState, type FormEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -22,6 +24,7 @@ import {
   incrementPostShare,
   subscribePostComments,
   togglePostLike,
+  type FollowTargetSummary,
 } from '../services/firestoreService';
 import { type Post, type PostComment, SCHEMA_LIMITS, type VerifiedBadgeInfo } from '../types';
 import { formatTimestamp, parseVideoUrl } from '../utils/media';
@@ -30,9 +33,12 @@ interface PostCardProps {
   post: Post;
   verifiedBadges?: Record<string, VerifiedBadgeInfo>;
   isSaved?: boolean;
+  isFollowingAuthor?: boolean;
   isHighlighted?: boolean;
   onOpenForm: (post: Post) => void;
   onToggleSaved?: (postId: string) => void;
+  onToggleFollow?: (target: FollowTargetSummary) => void;
+  onViewProfile?: (uid: string) => void;
   onNotify: (message: string) => void;
 }
 
@@ -53,9 +59,12 @@ export const PostCard = memo(function PostCard({
   post,
   verifiedBadges = {},
   isSaved = false,
+  isFollowingAuthor = false,
   isHighlighted = false,
   onOpenForm,
   onToggleSaved,
+  onToggleFollow,
+  onViewProfile,
   onNotify,
 }: PostCardProps) {
   const { user, profile, signInWithGoogle } = useAuth();
@@ -268,27 +277,38 @@ export const PostCard = memo(function PostCard({
       }`}
     >
       {/* Author + Unboxed Metadata Row */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
-          {post.authorAvatar && !avatarError ? (
-            <img
-              src={post.authorAvatar}
-              alt={post.authorName}
-              referrerPolicy="no-referrer"
-              onError={() => setAvatarError(true)}
-              className="w-10 h-10 rounded-full object-cover border border-[#E7E5E0] shrink-0"
-            />
-          ) : (
-            <div className="w-10 h-10 rounded-full bg-[#141413] text-white text-xs font-semibold flex items-center justify-center shrink-0">
-              {initials}
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={() => onViewProfile?.(post.authorId)}
+            aria-label={`View ${post.authorName} profile`}
+            className="shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-[#0E7C5B]/40 cursor-pointer"
+          >
+            {post.authorAvatar && !avatarError ? (
+              <img
+                src={post.authorAvatar}
+                alt={post.authorName}
+                referrerPolicy="no-referrer"
+                onError={() => setAvatarError(true)}
+                className="w-10 h-10 rounded-full object-cover border border-[#E7E5E0] hover:border-[#0E7C5B] transition-colors"
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-[#141413] text-white text-xs font-semibold flex items-center justify-center hover:bg-[#0E7C5B] transition-colors">
+                {initials}
+              </div>
+            )}
+          </button>
 
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 min-w-0">
-              <p className="text-sm font-semibold text-[#141413] truncate">
+              <button
+                type="button"
+                onClick={() => onViewProfile?.(post.authorId)}
+                className="text-sm font-semibold text-[#141413] hover:text-[#0E7C5B] hover:underline truncate text-left cursor-pointer transition-colors"
+              >
                 {post.authorName}
-              </p>
+              </button>
               {authorBadge && (
                 <span
                   title={authorBadge.verifiedLabel}
@@ -315,21 +335,57 @@ export const PostCard = memo(function PostCard({
           </div>
         </div>
 
-        {onToggleSaved && (
-          <button
-            type="button"
-            onClick={() => onToggleSaved(post.id)}
-            aria-label={isSaved ? 'Remove saved post' : 'Save post'}
-            title={isSaved ? 'Saved to bookmarks' : 'Save post'}
-            className={`p-2 rounded-lg transition-colors shrink-0 cursor-pointer ${
-              isSaved
-                ? 'text-[#0E7C5B] bg-[#0E7C5B]/10'
-                : 'text-[#5E5D59] hover:text-[#141413] hover:bg-[#FAF9F7]'
-            }`}
-          >
-            <Bookmark className={`w-4 h-4 ${isSaved ? 'fill-[#0E7C5B]' : ''}`} />
-          </button>
-        )}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {onToggleFollow && user?.uid !== post.authorId && (
+            <button
+              type="button"
+              onClick={() =>
+                onToggleFollow({
+                  uid: post.authorId,
+                  displayName: post.authorName,
+                  avatarUrl: post.authorAvatar,
+                  location: post.authorLocation,
+                })
+              }
+              aria-label={
+                isFollowingAuthor ? `Unfollow ${post.authorName}` : `Follow ${post.authorName}`
+              }
+              className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap cursor-pointer ${
+                isFollowingAuthor
+                  ? 'bg-[#FAF9F7] text-[#141413] border-[#D4D1CA] hover:border-[#141413]'
+                  : 'bg-[#0E7C5B]/5 text-[#0E7C5B] border-[#0E7C5B]/30 hover:bg-[#0E7C5B] hover:text-white hover:border-[#0E7C5B]'
+              }`}
+            >
+              {isFollowingAuthor ? (
+                <>
+                  <UserCheck className="w-3.5 h-3.5" />
+                  <span>Following</span>
+                </>
+              ) : (
+                <>
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>Follow</span>
+                </>
+              )}
+            </button>
+          )}
+
+          {onToggleSaved && (
+            <button
+              type="button"
+              onClick={() => onToggleSaved(post.id)}
+              aria-label={isSaved ? 'Remove saved post' : 'Save post'}
+              title={isSaved ? 'Saved to bookmarks' : 'Save post'}
+              className={`p-2 rounded-lg transition-colors shrink-0 cursor-pointer ${
+                isSaved
+                  ? 'text-[#0E7C5B] bg-[#0E7C5B]/10'
+                  : 'text-[#5E5D59] hover:text-[#141413] hover:bg-[#FAF9F7]'
+              }`}
+            >
+              <Bookmark className={`w-4 h-4 ${isSaved ? 'fill-[#0E7C5B]' : ''}`} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Headline & Prose */}
@@ -540,9 +596,13 @@ export const PostCard = memo(function PostCard({
                   >
                     <div className="space-y-0.5 min-w-0">
                       <div className="flex items-center gap-1.5 text-xs">
-                        <span className="font-semibold text-[#141413]">
+                        <button
+                          type="button"
+                          onClick={() => onViewProfile?.(comment.authorId)}
+                          className="font-semibold text-[#141413] hover:text-[#0E7C5B] hover:underline text-left cursor-pointer"
+                        >
                           {comment.authorName}
-                        </span>
+                        </button>
                         {commenterBadge && (
                           <span title={commenterBadge.verifiedLabel}>
                             <BadgeCheck className="w-3.5 h-3.5 fill-[#0E7C5B] text-white inline" />

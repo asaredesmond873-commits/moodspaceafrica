@@ -50,6 +50,15 @@ export interface VerifiedBadgeInfo {
   verifiedLabel: string;
 }
 
+export interface FollowRecord {
+  followerId: string;
+  followingId: string;
+  displayName: string;
+  avatarUrl: string;
+  location: string;
+  createdAt: Timestamp | null;
+}
+
 export interface VerificationRequest {
   uid: string;
   requesterName: string;

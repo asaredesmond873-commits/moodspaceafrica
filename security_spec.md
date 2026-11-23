@@ -11,6 +11,7 @@
    - Only the verified bootstrapped admin (`request.auth.token.email_verified == true && request.auth.token.email == 'asaredesmond873@gmail.com'`) can approve or reject `/verificationRequests/{userId}` and update `badgeVerified` / `verifiedLabel` on `/publicProfiles/{userId}`.
    - Submitted verification proofs (`/verificationRequests/{userId}`) contain sensitive identity references and are readable (`get` and `list`) strictly by the applicant (`uid == request.auth.uid`) and the bootstrapped admin.
 7. **Path & Size Poisoning Guards**: All document IDs are validated against `^[a-zA-Z0-9_\-]+$` and bounded to `<= 128` characters. Every string field and array field (`formConfig.fields <= 15`) has explicit `.size()` bounds.
+8. **Bidirectional Follow Atomicity & Anti-Self-Follow**: Writes to `/publicProfiles/{targetUid}/followers/{followerUid}` and `/publicProfiles/{followerUid}/following/{targetUid}` are strictly authorized only for `request.auth.uid == followerUid`, forbid `followerUid == targetUid`, require both public profiles to exist, and enforce cross-subcollection `existsAfter` / `!existsAfter` atomicity.
 
 ## 2. "Dirty Dozen+" Adversarial Payloads (Must Return PERMISSION_DENIED)
 1. **Self-Verification Escalation on Profile Create**: Creating `/publicProfiles/{uid}` with `badgeVerified: true` -> Blocked by `create` check requiring `badgeVerified == false`.
@@ -25,3 +26,5 @@
 10. **Author Self-Inflation of Likes**: Post author updating `likesCount` directly without a matching atomic `/likes/{uid}` write -> Blocked by `existsAfter(...)` and `+1`/`-1` check.
 11. **Closed Form Submission Attack**: Submitting a response to `/posts/{postId}/submissions/{subId}` when `formConfig.isOpen == false` -> Blocked by parent `get()` check.
 12. **Comment Moderation Hijack**: User C attempting to delete User B's comment on User A's post -> Blocked by `existing().authorId == request.auth.uid || get(...post...).data.authorId == request.auth.uid`.
+13. **Self-Follow or Asymmetric Follow Spoof**: User A creating `/publicProfiles/{userA}/followers/{userA}` or creating `/publicProfiles/{userB}/followers/{userA}` without atomically creating `/publicProfiles/{userA}/following/{userB}` -> Blocked by `followerId != userId` and `existsAfter(...)` cross-check.
+

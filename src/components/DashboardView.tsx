@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   Trash2,
   UserCheck,
+  Users,
   XCircle,
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
@@ -31,6 +32,7 @@ import {
   subscribeAllVerificationRequests,
   subscribeMyVerificationRequest,
   subscribePostComments,
+  subscribeProfileFollowers,
   subscribeUserPosts,
   togglePostFormOpen,
   togglePostVisibility,
@@ -65,6 +67,8 @@ type DashboardTab =
   | 'profile';
 
 interface DashboardViewProps {
+  followingCount?: number;
+  onViewProfile?: (uid: string) => void;
   onCreatePost: () => void;
   onEditPost: (post: Post) => void;
   onNotify: (message: string) => void;
@@ -85,6 +89,8 @@ const ID_TYPE_LABELS: Record<VerificationIdType, string> = {
 };
 
 export function DashboardView({
+  followingCount = 0,
+  onViewProfile,
   onCreatePost,
   onEditPost,
   onNotify,
@@ -94,6 +100,7 @@ export function DashboardView({
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
   const [myPosts, setMyPosts] = useState<Post[]>([]);
   const [postsLoading, setPostsLoading] = useState(true);
+  const [followersCount, setFollowersCount] = useState(0);
 
   const isAdmin = Boolean(user?.email && user.email === ADMIN_EMAIL);
 
@@ -188,9 +195,16 @@ export function DashboardView({
       unsubAdmin = subscribeAllVerificationRequests(setAllRequests, () => {});
     }
 
+    const unsubFollowers = subscribeProfileFollowers(
+      user.uid,
+      (rows) => setFollowersCount(rows.length),
+      () => {}
+    );
+
     return () => {
       unsubPosts();
       unsubMyVer();
+      unsubFollowers();
       if (unsubAdmin) unsubAdmin();
     };
   }, [user]);
@@ -518,6 +532,23 @@ export function DashboardView({
               </p>
             </div>
           </div>
+
+          {onViewProfile && (
+            <button
+              type="button"
+              onClick={() => onViewProfile(user.uid)}
+              className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-[#141413] bg-[#FAF9F7] border border-[#E7E5E0] rounded-lg hover:border-[#0E7C5B] transition-colors cursor-pointer"
+            >
+              <span className="inline-flex items-center gap-2">
+                <Users className="w-3.5 h-3.5 text-[#0E7C5B]" />
+                <span className="tabular-nums">
+                  <strong className="font-semibold">{followersCount}</strong> followers ·{' '}
+                  <strong className="font-semibold">{followingCount}</strong> following
+                </span>
+              </span>
+              <span className="text-[#0E7C5B] font-semibold">View</span>
+            </button>
+          )}
 
           <nav aria-label="Dashboard sections" className="grid grid-cols-2 lg:grid-cols-1 gap-1.5">
             {sidebarItems.map((item) => {

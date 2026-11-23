@@ -1,6 +1,7 @@
-import { BadgeCheck, Bookmark, Search, X } from 'lucide-react';
+import { BadgeCheck, Bookmark, Search, Users, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import type { FollowTargetSummary } from '../services/firestoreService';
 import type { MediaFormat, Post, PostCategory, VerifiedBadgeInfo } from '../types';
 import { PostCard } from './PostCard';
 
@@ -11,12 +12,15 @@ interface DiscoverFeedProps {
   loading: boolean;
   verifiedBadges: Record<string, VerifiedBadgeInfo>;
   savedPostIds: Set<string>;
+  followingIds: Set<string>;
   initialCategory?: 'all' | PostCategory;
   highlightedPostId: string | null;
   onOpenComposer: () => void;
   onOpenDashboard: () => void;
   onOpenForm: (post: Post) => void;
   onToggleSaved: (postId: string) => void;
+  onToggleFollow: (target: FollowTargetSummary) => void;
+  onViewProfile: (uid: string) => void;
   onNotify: (message: string) => void;
 }
 
@@ -25,12 +29,15 @@ export function DiscoverFeed({
   loading,
   verifiedBadges,
   savedPostIds,
+  followingIds,
   initialCategory = 'all',
   highlightedPostId,
   onOpenComposer,
   onOpenDashboard,
   onOpenForm,
   onToggleSaved,
+  onToggleFollow,
+  onViewProfile,
   onNotify,
 }: DiscoverFeedProps) {
   const { user, authBusy, signInWithGoogle } = useAuth();
@@ -39,6 +46,7 @@ export function DiscoverFeed({
   const [sortMode, setSortMode] = useState<FeedSortMode>('latest');
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [savedOnly, setSavedOnly] = useState(false);
+  const [followingOnly, setFollowingOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
@@ -46,8 +54,11 @@ export function DiscoverFeed({
   }, [initialCategory]);
 
   useEffect(() => {
-    if (!user && savedOnly) setSavedOnly(false);
-  }, [user, savedOnly]);
+    if (!user) {
+      if (savedOnly) setSavedOnly(false);
+      if (followingOnly) setFollowingOnly(false);
+    }
+  }, [user, savedOnly, followingOnly]);
 
   const filteredPosts = useMemo(() => {
     const terms = searchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -56,6 +67,7 @@ export function DiscoverFeed({
       if (formatFilter !== 'all' && post.mediaFormat !== formatFilter) return false;
       if (verifiedOnly && !verifiedBadges[post.authorId]) return false;
       if (savedOnly && !savedPostIds.has(post.id)) return false;
+      if (followingOnly && !followingIds.has(post.authorId)) return false;
       if (terms.length === 0) return true;
       const haystack = [
         post.title,
@@ -87,8 +99,10 @@ export function DiscoverFeed({
     formatFilter,
     verifiedOnly,
     savedOnly,
+    followingOnly,
     verifiedBadges,
     savedPostIds,
+    followingIds,
     searchQuery,
     sortMode,
   ]);
@@ -98,6 +112,7 @@ export function DiscoverFeed({
     formatFilter !== 'all' ||
     verifiedOnly ||
     savedOnly ||
+    followingOnly ||
     Boolean(searchQuery.trim());
 
   return (
@@ -293,18 +308,33 @@ export function DiscoverFeed({
           </button>
 
           {user && (
-            <button
-              type="button"
-              onClick={() => setSavedOnly(!savedOnly)}
-              className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                savedOnly
-                  ? 'bg-[#141413] text-white border-[#141413]'
-                  : 'bg-white text-[#5E5D59] border-[#E7E5E0] hover:text-[#141413]'
-              }`}
-            >
-              <Bookmark className="w-3.5 h-3.5" />
-              <span>Saved ({savedPostIds.size})</span>
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setFollowingOnly(!followingOnly)}
+                className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  followingOnly
+                    ? 'bg-[#0E7C5B] text-white border-[#0E7C5B]'
+                    : 'bg-white text-[#5E5D59] border-[#E7E5E0] hover:text-[#141413]'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Following ({followingIds.size})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSavedOnly(!savedOnly)}
+                className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  savedOnly
+                    ? 'bg-[#141413] text-white border-[#141413]'
+                    : 'bg-white text-[#5E5D59] border-[#E7E5E0] hover:text-[#141413]'
+                }`}
+              >
+                <Bookmark className="w-3.5 h-3.5" />
+                <span>Saved ({savedPostIds.size})</span>
+              </button>
+            </>
           )}
         </div>
 
@@ -316,6 +346,7 @@ export function DiscoverFeed({
               setFormatFilter('all');
               setVerifiedOnly(false);
               setSavedOnly(false);
+              setFollowingOnly(false);
               setSearchQuery('');
             }}
             className="text-xs font-semibold text-[#0E7C5B] hover:underline whitespace-nowrap cursor-pointer"
@@ -388,6 +419,7 @@ export function DiscoverFeed({
                       setFormatFilter('all');
                       setVerifiedOnly(false);
                       setSavedOnly(false);
+                      setFollowingOnly(false);
                       setSearchQuery('');
                     }}
                     className="px-4 py-2 text-sm font-medium text-[#141413] border border-[#D4D1CA] rounded-lg hover:border-[#141413] cursor-pointer"
@@ -405,9 +437,12 @@ export function DiscoverFeed({
               post={post}
               verifiedBadges={verifiedBadges}
               isSaved={savedPostIds.has(post.id)}
+              isFollowingAuthor={followingIds.has(post.authorId)}
               isHighlighted={highlightedPostId === post.id}
               onOpenForm={onOpenForm}
               onToggleSaved={onToggleSaved}
+              onToggleFollow={onToggleFollow}
+              onViewProfile={onViewProfile}
               onNotify={onNotify}
             />
           ))

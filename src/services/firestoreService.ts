@@ -17,6 +17,7 @@ import {
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import {
   type AccountType,
+  type FollowRecord,
   type FormConfig,
   type FormSubmission,
   type MediaFormat,
@@ -201,6 +202,159 @@ export function subscribeVerifiedProfiles(
       }
     }
   );
+}
+
+export function subscribePublicProfile(
+  uid: string,
+  onData: (profile: PublicProfile | null) => void,
+  onError?: (err: Error) => void
+) {
+  const path = `publicProfiles/${uid}`;
+  return onSnapshot(
+    doc(db, 'publicProfiles', uid),
+    (snap) => {
+      onData(snap.exists() ? (snap.data() as PublicProfile) : null);
+    },
+    (error) => {
+      try {
+        handleFirestoreError(error, OperationType.GET, path);
+      } catch (wrapped) {
+        if (onError && wrapped instanceof Error) {
+          onError(wrapped);
+        }
+      }
+    }
+  );
+}
+
+export function subscribeMyFollowingIds(
+  uid: string,
+  onData: (followingIds: Set<string>) => void,
+  onError?: (err: Error) => void
+) {
+  const path = `publicProfiles/${uid}/following`;
+  const q = query(collection(db, 'publicProfiles', uid, 'following'), where('followerId', '==', uid));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const next = new Set<string>();
+      snap.docs.forEach((d) => next.add(d.id));
+      onData(next);
+    },
+    (error) => {
+      try {
+        handleFirestoreError(error, OperationType.LIST, path);
+      } catch (wrapped) {
+        if (onError && wrapped instanceof Error) {
+          onError(wrapped);
+        }
+      }
+    }
+  );
+}
+
+export function subscribeProfileFollowers(
+  uid: string,
+  onData: (followers: FollowRecord[]) => void,
+  onError?: (err: Error) => void
+) {
+  const path = `publicProfiles/${uid}/followers`;
+  const q = query(collection(db, 'publicProfiles', uid, 'followers'), where('followingId', '==', uid));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const rows = snap.docs
+        .map((d) => d.data() as FollowRecord)
+        .sort((a, b) => (b.createdAt?.toMillis() ?? Date.now()) - (a.createdAt?.toMillis() ?? Date.now()));
+      onData(rows);
+    },
+    (error) => {
+      try {
+        handleFirestoreError(error, OperationType.LIST, path);
+      } catch (wrapped) {
+        if (onError && wrapped instanceof Error) {
+          onError(wrapped);
+        }
+      }
+    }
+  );
+}
+
+export function subscribeProfileFollowing(
+  uid: string,
+  onData: (following: FollowRecord[]) => void,
+  onError?: (err: Error) => void
+) {
+  const path = `publicProfiles/${uid}/following`;
+  const q = query(collection(db, 'publicProfiles', uid, 'following'), where('followerId', '==', uid));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const rows = snap.docs
+        .map((d) => d.data() as FollowRecord)
+        .sort((a, b) => (b.createdAt?.toMillis() ?? Date.now()) - (a.createdAt?.toMillis() ?? Date.now()));
+      onData(rows);
+    },
+    (error) => {
+      try {
+        handleFirestoreError(error, OperationType.LIST, path);
+      } catch (wrapped) {
+        if (onError && wrapped instanceof Error) {
+          onError(wrapped);
+        }
+      }
+    }
+  );
+}
+
+export interface FollowTargetSummary {
+  uid: string;
+  displayName: string;
+  avatarUrl: string;
+  location: string;
+}
+
+export async function toggleFollowUser(
+  myProfile: PublicProfile,
+  target: FollowTargetSummary,
+  currentlyFollowing: boolean
+): Promise<void> {
+  if (!myProfile.uid || !target.uid || myProfile.uid === target.uid) {
+    return;
+  }
+
+  const path = `publicProfiles/${target.uid}/followers/${myProfile.uid}`;
+  try {
+    const batch = writeBatch(db);
+    const followerRef = doc(db, 'publicProfiles', target.uid, 'followers', myProfile.uid);
+    const followingRef = doc(db, 'publicProfiles', myProfile.uid, 'following', target.uid);
+
+    if (currentlyFollowing) {
+      batch.delete(followerRef);
+      batch.delete(followingRef);
+    } else {
+      batch.set(followerRef, {
+        followerId: myProfile.uid,
+        followingId: target.uid,
+        displayName: clampString(myProfile.displayName, SCHEMA_LIMITS.DISPLAY_NAME_MAX) || 'Member',
+        avatarUrl: clampString(myProfile.avatarUrl, SCHEMA_LIMITS.AVATAR_URL_MAX),
+        location: clampString(myProfile.location, SCHEMA_LIMITS.LOCATION_MAX),
+        createdAt: serverTimestamp(),
+      });
+      batch.set(followingRef, {
+        followerId: myProfile.uid,
+        followingId: target.uid,
+        displayName: clampString(target.displayName, SCHEMA_LIMITS.DISPLAY_NAME_MAX) || 'Member',
+        avatarUrl: clampString(target.avatarUrl, SCHEMA_LIMITS.AVATAR_URL_MAX),
+        location: clampString(target.location, SCHEMA_LIMITS.LOCATION_MAX),
+        createdAt: serverTimestamp(),
+      });
+    }
+
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
 }
 
 export function subscribePublicPosts(

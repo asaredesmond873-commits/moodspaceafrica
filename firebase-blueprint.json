@@ -63,6 +63,47 @@
       },
       "required": ["uid", "displayName", "bio", "location", "accountType", "avatarUrl", "isPublic", "createdAt", "updatedAt"]
     },
+    "FollowRecord": {
+      "title": "FollowRecord",
+      "description": "Bidirectional social follow link stored under a user's followers and following subcollections.",
+      "type": "object",
+      "properties": {
+        "followerId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128,
+          "description": "UID of the user who is following."
+        },
+        "followingId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "maxLength": 128,
+          "description": "UID of the user being followed."
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Display name snapshot of the linked user."
+        },
+        "avatarUrl": {
+          "type": "string",
+          "maxLength": 150000,
+          "description": "Avatar URL snapshot of the linked user."
+        },
+        "location": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Location snapshot of the linked user."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the follow began."
+        }
+      },
+      "required": ["followerId", "followingId", "displayName", "avatarUrl", "location", "createdAt"]
+    },
     "UserPrivate": {
       "title": "UserPrivate",
       "description": "Owner-only private account information containing PII such as email.",
@@ -503,6 +544,14 @@
     "/publicProfiles/{userId}": {
       "schema": { "$ref": "#/entities/PublicProfile" },
       "description": "Publicly discoverable creator and business profile information without PII."
+    },
+    "/publicProfiles/{userId}/followers/{followerId}": {
+      "schema": { "$ref": "#/entities/FollowRecord" },
+      "description": "Users following this public profile, synchronized atomically with the follower's following list."
+    },
+    "/publicProfiles/{userId}/following/{followingId}": {
+      "schema": { "$ref": "#/entities/FollowRecord" },
+      "description": "Users followed by this public profile, synchronized atomically with the target's followers list."
     },
     "/userPrivate/{userId}": {
       "schema": { "$ref": "#/entities/UserPrivate" },

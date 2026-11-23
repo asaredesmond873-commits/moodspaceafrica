@@ -4,10 +4,13 @@ import { DiscoverFeed } from './components/DiscoverFeed';
 import { TopBar, type NavSection } from './components/TopBar';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import {
+  subscribeMyFollowingIds,
   subscribePublicPosts,
   subscribeSavedPostIds,
   subscribeVerifiedProfiles,
+  toggleFollowUser,
   toggleSavedPost,
+  type FollowTargetSummary,
 } from './services/firestoreService';
 import type { Post, PostCategory, VerifiedBadgeInfo } from './types';
 
@@ -19,6 +22,9 @@ const PostComposerModal = lazy(() =>
 );
 const FormFillModal = lazy(() =>
   import('./components/FormFillModal').then((m) => ({ default: m.FormFillModal }))
+);
+const UserProfileModal = lazy(() =>
+  import('./components/UserProfileModal').then((m) => ({ default: m.UserProfileModal }))
 );
 
 const FEED_CACHE_KEY = 'moodspace_public_feed_cache_v3';
@@ -101,12 +107,14 @@ class AppErrorBoundary extends Component<
 }
 
 function MoodSpaceShell() {
-  const { user, signInWithGoogle, authError } = useAuth();
+  const { user, profile, signInWithGoogle, authError } = useAuth();
   const [activeSection, setActiveSection] = useState<NavSection>('discover');
   const [posts, setPosts] = useState<Post[]>(() => readCachedFeed());
   const [feedLoading, setFeedLoading] = useState(() => posts.length === 0);
   const [verifiedBadges, setVerifiedBadges] = useState<Record<string, VerifiedBadgeInfo>>({});
   const [savedPostIds, setSavedPostIds] = useState<Set<string>>(() => new Set());
+  const [followingIds, setFollowingIds] = useState<Set<string>>(() => new Set());
+  const [viewingProfileUid, setViewingProfileUid] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
   const [editingPost, setEditingPost] = useState<Post | null>(null);
   const [formPost, setFormPost] = useState<Post | null>(null);
@@ -142,10 +150,15 @@ function MoodSpaceShell() {
   useEffect(() => {
     if (!user) {
       setSavedPostIds(new Set());
+      setFollowingIds(new Set());
       return;
     }
-    const unsub = subscribeSavedPostIds(user.uid, setSavedPostIds, () => {});
-    return () => unsub();
+    const unsubSaved = subscribeSavedPostIds(user.uid, setSavedPostIds, () => {});
+    const unsubFollowing = subscribeMyFollowingIds(user.uid, setFollowingIds, () => {});
+    return () => {
+      unsubSaved();
+      unsubFollowing();
+    };
   }, [user]);
 
   useEffect(() => {
@@ -211,6 +224,47 @@ function MoodSpaceShell() {
     }
   };
 
+  const handleToggleFollow = async (target: FollowTargetSummary) => {
+    let activeProfile = profile;
+    if (!user || !activeProfile) {
+      activeProfile = await signInWithGoogle();
+      if (!activeProfile) return;
+    }
+
+    if (activeProfile.uid === target.uid) return;
+
+    const currentlyFollowing = followingIds.has(target.uid);
+    setFollowingIds((prev) => {
+      const next = new Set(prev);
+      if (currentlyFollowing) {
+        next.delete(target.uid);
+      } else {
+        next.add(target.uid);
+      }
+      return next;
+    });
+
+    try {
+      await toggleFollowUser(activeProfile, target, currentlyFollowing);
+      showToast(
+        currentlyFollowing
+          ? `Unfollowed ${target.displayName}`
+          : `Following ${target.displayName}`
+      );
+    } catch {
+      setFollowingIds((prev) => {
+        const next = new Set(prev);
+        if (currentlyFollowing) {
+          next.add(target.uid);
+        } else {
+          next.delete(target.uid);
+        }
+        return next;
+      });
+      showToast('Could not update follow status.');
+    }
+  };
+
   const initialCategory: 'all' | PostCategory =
     activeSection === 'events'
       ? 'event'
@@ -247,6 +301,8 @@ function MoodSpaceShell() {
             }
           >
             <DashboardView
+              followingCount={followingIds.size}
+              onViewProfile={(uid) => setViewingProfileUid(uid)}
               onCreatePost={() => void handleOpenCreate()}
               onEditPost={handleEditPost}
               onNotify={showToast}
@@ -258,12 +314,15 @@ function MoodSpaceShell() {
             loading={feedLoading}
             verifiedBadges={verifiedBadges}
             savedPostIds={savedPostIds}
+            followingIds={followingIds}
             initialCategory={initialCategory}
             highlightedPostId={highlightedPostId}
             onOpenComposer={() => void handleOpenCreate()}
             onOpenDashboard={() => setActiveSection('dashboard')}
             onOpenForm={(post) => setFormPost(post)}
             onToggleSaved={(postId) => void handleToggleSaved(postId)}
+            onToggleFollow={(target) => void handleToggleFollow(target)}
+            onViewProfile={(uid) => setViewingProfileUid(uid)}
             onNotify={showToast}
           />
         )}
@@ -298,6 +357,28 @@ function MoodSpaceShell() {
             post={formPost}
             onClose={() => setFormPost(null)}
             onSubmitted={showToast}
+          />
+        </Suspense>
+      )}
+
+      {viewingProfileUid && (
+        <Suspense fallback={null}>
+          <UserProfileModal
+            profileUid={viewingProfileUid}
+            posts={posts}
+            verifiedBadges={verifiedBadges}
+            savedPostIds={savedPostIds}
+            followingIds={followingIds}
+            onClose={() => setViewingProfileUid(null)}
+            onSelectProfile={(uid) => setViewingProfileUid(uid)}
+            onToggleFollow={(target) => void handleToggleFollow(target)}
+            onToggleSaved={(postId) => void handleToggleSaved(postId)}
+            onOpenForm={(post) => {
+              setViewingProfileUid(null);
+              setFormPost(post);
+            }}
+            onOpenEditProfile={() => setActiveSection('dashboard')}
+            onNotify={showToast}
           />
         </Suspense>
       )}
