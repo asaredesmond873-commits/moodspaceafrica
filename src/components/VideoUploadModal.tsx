@@ -1,5 +1,16 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle2, Crown, Film, Upload, Video, X } from 'lucide-react';
+import {
+  AlertCircle,
+  BadgeCheck,
+  CheckCircle2,
+  Eye,
+  Film,
+  Lock,
+  Trophy,
+  Upload,
+  Video,
+  X,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { uploadChallengeVideo } from '../services/challengeService';
 import { CHALLENGE_LIMITS, type ChallengeVideo } from '../types';
@@ -14,8 +25,8 @@ import {
 interface VideoUploadModalProps {
   round: ChallengeRoundInfo;
   existingEntry: ChallengeVideo | null;
-  hasProSubscription?: boolean;
-  onOpenSubscriptions?: () => void;
+  hasCreatorPass: boolean;
+  onOpenSubscribe: () => void;
   onClose: () => void;
   onUploaded: (video: ChallengeVideo) => void;
 }
@@ -23,8 +34,8 @@ interface VideoUploadModalProps {
 export function VideoUploadModal({
   round,
   existingEntry,
-  hasProSubscription = false,
-  onOpenSubscriptions,
+  hasCreatorPass,
+  onOpenSubscribe,
   onClose,
   onUploaded,
 }: VideoUploadModalProps) {
@@ -79,6 +90,11 @@ export function VideoUploadModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (!hasCreatorPass) {
+      setError('An active $10/month Creator Pass is required to upload a story and enter to win the prize.');
+      return;
+    }
 
     if (existingEntry) {
       setError('You have already uploaded your 1 story video for this 14-day round.');
@@ -164,7 +180,58 @@ export function VideoUploadModal({
             <span>Under 15 MB</span>
           </div>
 
-          {existingEntry ? (
+          {!hasCreatorPass ? (
+            <div className="bg-[#FAF9F7] border border-[#E7E5E0] rounded-2xl p-5 space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#ECFDF5] text-[#0E7C5B] flex items-center justify-center shrink-0">
+                  <Lock className="w-5 h-5" />
+                </div>
+                <div className="space-y-1">
+                  <h3 className="font-display text-base font-bold text-[#141413]">
+                    Subscribe to Post &amp; Enter to Win
+                  </h3>
+                  <p className="text-xs text-[#5E5D59] leading-relaxed">
+                    Free members can watch, like, comment, follow, and vote. Only subscribed Creator Pass members ($10/month via Paystack) can post a story to compete for the prize.
+                  </p>
+                </div>
+              </div>
+
+              <ul className="space-y-2 text-xs text-[#353431] bg-white border border-[#E7E5E0] rounded-xl p-3.5">
+                <li className="flex items-center gap-2">
+                  <Trophy className="w-4 h-4 text-[#0E7C5B] shrink-0" />
+                  <span>Post your African story video &amp; enter to win the prize</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <BadgeCheck className="w-4 h-4 text-[#0E7C5B] shrink-0" />
+                  <span>Receive a Verified Creator badge on your profile</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <Eye className="w-4 h-4 text-[#0E7C5B] shrink-0" />
+                  <span>See who viewed your profile</span>
+                </li>
+              </ul>
+
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex-1 min-h-[44px] px-4 py-2.5 text-sm font-semibold text-[#5E5D59] bg-white border border-[#E7E5E0] rounded-xl cursor-pointer"
+                >
+                  Keep Browsing
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenSubscribe();
+                  }}
+                  className="flex-[1.5] min-h-[44px] px-4 py-2.5 text-sm font-semibold text-white bg-[#0E7C5B] rounded-xl hover:bg-[#095E44] cursor-pointer"
+                >
+                  Subscribe · $10/mo
+                </button>
+              </div>
+            </div>
+          ) : existingEntry ? (
             <div className="bg-[#FAF9F7] border border-[#A7F3D0] rounded-xl p-4 space-y-2.5">
               <div className="flex items-start gap-2.5">
                 <CheckCircle2 className="w-5 h-5 text-[#0E7C5B] shrink-0 mt-0.5" />
@@ -173,14 +240,14 @@ export function VideoUploadModal({
                     Your {round.label} story is already live
                   </p>
                   <p className="text-xs text-[#5E5D59]">
-                    Each storyteller can upload 1 video per 14-day round. Boost or share it to earn support from viewers across Africa!
+                    Each storyteller can upload 1 video per 14-day round. Share it so viewers across Africa can watch and vote for your story!
                   </p>
                 </div>
               </div>
               <div className="flex items-center justify-between pt-2 border-t border-[#E7E5E0] text-xs">
                 <span className="font-semibold text-[#141413] truncate pr-3">{existingEntry.title}</span>
                 <span className="text-[#0E7C5B] font-semibold tabular-nums shrink-0">
-                  {existingEntry.votesCount} votes · {existingEntry.giftsCount} gifts
+                  {existingEntry.votesCount} votes · {existingEntry.viewsCount} views
                 </span>
               </div>
               <button
@@ -255,27 +322,6 @@ export function VideoUploadModal({
                   required
                 />
               </div>
-
-              {!hasProSubscription && onOpenSubscriptions && (
-                <div className="bg-[#FAF9F7] border border-[#E7E5E0] rounded-xl p-3 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <Crown className="w-4 h-4 text-[#D97706] shrink-0" />
-                    <p className="text-xs text-[#5E5D59] truncate">
-                      Want a Pro Storyteller badge &amp; priority reach?
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onClose();
-                      onOpenSubscriptions();
-                    }}
-                    className="text-xs font-semibold text-[#0E7C5B] hover:underline whitespace-nowrap shrink-0 cursor-pointer"
-                  >
-                    Creator Pro
-                  </button>
-                </div>
-              )}
 
               {uploading && (
                 <div className="space-y-1.5 bg-[#FAF9F7] border border-[#E7E5E0] rounded-xl p-3">

@@ -2,15 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Award,
   BadgeCheck,
-  Bookmark,
+  CheckCircle2,
   Clock,
-  Crown,
-  Eye,
   Film,
   Flame,
-  Globe2,
-  Medal,
   Search,
+  SlidersHorizontal,
   ThumbsUp,
   TrendingUp,
   Trophy,
@@ -19,7 +16,6 @@ import {
   Video,
   Wifi,
   X,
-  Zap,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -27,6 +23,7 @@ import {
   fetchMyDailyVote,
   saveChallengeConfig,
   subscribeChallengeConfig,
+  subscribePublicProfilesList,
 } from '../services/challengeService';
 import type { FollowTargetSummary } from '../services/firestoreService';
 import {
@@ -37,11 +34,11 @@ import {
   type ChallengeConfig,
   type ChallengeDailyVote,
   type ChallengeVideo,
+  type PublicProfile,
   type VerifiedBadgeInfo,
 } from '../types';
 import {
   computeCreatorSupportScore,
-  formatCompactCount,
   getAfricanRegionFromLocation,
   getCountdownParts,
   getCurrentChallengeRound,
@@ -60,17 +57,15 @@ interface VideosArenaViewProps {
   roundVideos: ChallengeVideo[];
   allVideos: ChallengeVideo[];
   videosLoading: boolean;
-  initialViewMode?: 'stories' | 'leaderboard';
+  mode?: 'home' | 'following';
   verifiedBadges: Record<string, VerifiedBadgeInfo>;
   followingIds: Set<string>;
-  subscribedTargetIds: Set<string>;
-  hasProSubscription: boolean;
+  hasCreatorPass: boolean;
   savedVideoIds: Set<string>;
   onToggleFollow: (target: FollowTargetSummary) => void;
   onToggleSaved: (videoId: string) => void;
-  onOpenBoost: (video: ChallengeVideo) => void;
-  onSubscribeCreator: (creatorId: string, creatorName: string, location: string) => void;
-  onOpenSubscriptionsPage: () => void;
+  onOpenSubscribe: () => void;
+  onOpenDashboardLeaderboard: () => void;
   onViewProfile: (uid: string) => void;
   onNotify: (msg: string) => void;
   uploadRequestedNonce?: number;
@@ -96,17 +91,15 @@ export function VideosArenaView({
   roundVideos,
   allVideos,
   videosLoading,
-  initialViewMode = 'stories',
+  mode = 'home',
   verifiedBadges,
   followingIds,
-  subscribedTargetIds,
-  hasProSubscription,
+  hasCreatorPass,
   savedVideoIds,
   onToggleFollow,
   onToggleSaved,
-  onOpenBoost,
-  onSubscribeCreator,
-  onOpenSubscriptionsPage,
+  onOpenSubscribe,
+  onOpenDashboardLeaderboard,
   onViewProfile,
   onNotify,
   uploadRequestedNonce = 0,
@@ -118,31 +111,28 @@ export function VideosArenaView({
 
   const [config, setConfig] = useState<ChallengeConfig>(DEFAULT_ARENA_CONFIG);
   const [dailyVote, setDailyVote] = useState<ChallengeDailyVote | null>(null);
+  const [publicProfiles, setPublicProfiles] = useState<PublicProfile[]>([]);
 
   const [dataSaver, setDataSaver] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem(DATA_SAVER_STORAGE_KEY) === 'true';
   });
 
-  const [feedScope, setFeedScope] = useState<'for_you' | 'following' | 'saved'>('for_you');
-  const [feedSort, setFeedSort] = useState<'trending' | 'boosted' | 'latest'>('trending');
+  const [feedScope, setFeedScope] = useState<'for_you' | 'following' | 'saved'>(
+    mode === 'following' ? 'following' : 'for_you'
+  );
+  const [feedSort, setFeedSort] = useState<'trending' | 'latest'>('trending');
   const [selectedRegion, setSelectedRegion] = useState<AfricanRegion>('All Africa');
   const [searchQuery, setSearchQuery] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
   const [streak, setStreak] = useState<SupporterStreakState>(() => readSupporterStreak());
-  const [mobilePanel, setMobilePanel] = useState<'feed' | 'leaderboard' | 'rewards'>(
-    initialViewMode === 'leaderboard' ? 'leaderboard' : 'feed'
-  );
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
 
   const isAdmin = Boolean(user?.email === ADMIN_EMAIL);
 
   useEffect(() => {
-    if (initialViewMode === 'leaderboard') {
-      setMobilePanel('leaderboard');
-    } else {
-      setMobilePanel('feed');
-    }
-  }, [initialViewMode]);
+    setFeedScope(mode === 'following' ? 'following' : 'for_you');
+  }, [mode]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -163,9 +153,15 @@ export function VideosArenaView({
   }, []);
 
   useEffect(() => {
+    if (mode !== 'following') return;
+    const unsubProfiles = subscribePublicProfilesList(setPublicProfiles, () => {});
+    return () => unsubProfiles();
+  }, [mode]);
+
+  useEffect(() => {
     if (!user) {
       setDailyVote(null);
-      if (feedScope === 'following' || feedScope === 'saved') {
+      if (mode === 'home' && feedScope !== 'for_you') {
         setFeedScope('for_you');
       }
       return;
@@ -179,7 +175,7 @@ export function VideosArenaView({
         }
       })
       .catch(() => setDailyVote(null));
-  }, [user, feedScope]);
+  }, [user, feedScope, mode]);
 
   useEffect(() => {
     if (videosLoading || typeof window === 'undefined') return;
@@ -198,16 +194,17 @@ export function VideosArenaView({
     [roundVideos, user]
   );
 
-  // Saved scope searches across all active rounds so bookmarks stay accessible
-  const baseVideoList = feedScope === 'saved' ? allVideos : roundVideos;
+  // Following & Saved scopes pull across all rounds so friends' and bookmarked stories stay visible
+  const effectiveScope = mode === 'following' ? 'following' : feedScope;
+  const baseVideoList = effectiveScope === 'for_you' ? roundVideos : allVideos;
 
   const filteredVideos = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const matched = baseVideoList.filter((v) => {
-      if (feedScope === 'following' && !followingIds.has(v.authorId)) {
+      if (effectiveScope === 'following' && !followingIds.has(v.authorId)) {
         return false;
       }
-      if (feedScope === 'saved' && !savedVideoIds.has(v.id)) {
+      if (effectiveScope === 'saved' && !savedVideoIds.has(v.id)) {
         return false;
       }
       if (selectedRegion !== 'All Africa') {
@@ -225,73 +222,72 @@ export function VideosArenaView({
 
     const sorted = [...matched];
     if (feedSort === 'trending') {
-      sorted.sort((a, b) => computeCreatorSupportScore(b, nowMs) - computeCreatorSupportScore(a, nowMs));
-    } else if (feedSort === 'boosted') {
-      sorted.sort((a, b) => {
-        const aActive = a.boostedUntil > nowMs ? 1 : 0;
-        const bActive = b.boostedUntil > nowMs ? 1 : 0;
-        if (bActive !== aActive) return bActive - aActive;
-        if (b.boostedUntil !== a.boostedUntil) return b.boostedUntil - a.boostedUntil;
-        return b.viewsCount - a.viewsCount;
-      });
+      sorted.sort((a, b) => computeCreatorSupportScore(b) - computeCreatorSupportScore(a));
     } else {
       sorted.sort((a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0));
     }
     return sorted;
-  }, [baseVideoList, feedScope, feedSort, followingIds, savedVideoIds, selectedRegion, searchQuery, nowMs]);
+  }, [baseVideoList, effectiveScope, feedSort, followingIds, savedVideoIds, selectedRegion, searchQuery]);
 
-  const risingStorytellers = useMemo(() => {
-    const map = new Map<
+  const suggestedFriends = useMemo(() => {
+    const byUid = new Map<
       string,
       {
         uid: string;
         displayName: string;
         avatarUrl: string;
         location: string;
-        region: string;
         score: number;
-        videoId: string;
       }
     >();
 
     for (const v of allVideos) {
       if (user && v.authorId === user.uid) continue;
-      const score = computeCreatorSupportScore(v, nowMs);
-      const existing = map.get(v.authorId);
-      if (!existing) {
-        map.set(v.authorId, {
+      const score = computeCreatorSupportScore(v);
+      const prev = byUid.get(v.authorId);
+      if (!prev || score > prev.score) {
+        byUid.set(v.authorId, {
           uid: v.authorId,
           displayName: v.authorName,
           avatarUrl: v.authorAvatar,
           location: v.authorLocation || 'Africa',
-          region: getAfricanRegionFromLocation(v.authorLocation),
           score,
-          videoId: v.id,
         });
-      } else if (score > existing.score) {
-        existing.score = score;
       }
     }
 
-    return Array.from(map.values())
+    for (const p of publicProfiles) {
+      if (user && p.uid === user.uid) continue;
+      if (!byUid.has(p.uid)) {
+        byUid.set(p.uid, {
+          uid: p.uid,
+          displayName: p.displayName,
+          avatarUrl: p.avatarUrl,
+          location: p.location || 'Africa',
+          score: 0,
+        });
+      }
+    }
+
+    return Array.from(byUid.values())
       .sort((a, b) => {
         const aFollowed = followingIds.has(a.uid) ? 1 : 0;
         const bFollowed = followingIds.has(b.uid) ? 1 : 0;
         if (aFollowed !== bFollowed) return aFollowed - bFollowed;
         return b.score - a.score;
       })
-      .slice(0, 8);
-  }, [allVideos, user, followingIds, nowMs]);
+      .slice(0, 12);
+  }, [allVideos, publicProfiles, user, followingIds]);
 
   const top10Leaderboard = useMemo(() => {
     const ranked = [...roundVideos].sort((a, b) => {
-      const scoreDiff = computeCreatorSupportScore(b, nowMs) - computeCreatorSupportScore(a, nowMs);
+      const scoreDiff = computeCreatorSupportScore(b) - computeCreatorSupportScore(a);
       if (scoreDiff !== 0) return scoreDiff;
       if (b.votesCount !== a.votesCount) return b.votesCount - a.votesCount;
       return b.viewsCount - a.viewsCount;
     });
     return ranked.slice(0, 10);
-  }, [roundVideos, nowMs]);
+  }, [roundVideos]);
 
   const rankLookup = useMemo(() => {
     const map = new Map<string, number>();
@@ -330,7 +326,6 @@ export function VideosArenaView({
       if (!signed) return;
     }
     setFeedScope(scope);
-    setMobilePanel('feed');
   };
 
   const handleVote = async (video: ChallengeVideo) => {
@@ -376,111 +371,135 @@ export function VideosArenaView({
     }
   };
 
-  const jumpToVideo = (videoId: string) => {
-    setFeedScope('for_you');
-    setSelectedRegion('All Africa');
-    setSearchQuery('');
-    setMobilePanel('feed');
-    window.setTimeout(() => {
-      const el = document.getElementById(`video-reel-${videoId}`);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }, 60);
-  };
-
-  const isLeaderboardPrimary = initialViewMode === 'leaderboard';
+  const hasActiveFilter = selectedRegion !== 'All Africa' || searchQuery.trim().length > 0 || feedSort !== 'trending';
 
   return (
     <div className="min-h-screen bg-[#FAF9F7] text-[#141413]">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-16 space-y-6">
-        {/* Top Social Header + Search + Actions */}
-        <section className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-            <div className="space-y-1">
-              <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-[#141413]">
-                {isLeaderboardPrimary ? 'Top African Storytellers' : 'African Stories'}
-              </h1>
-              <p className="text-sm text-[#5E5D59]">
-                {isLeaderboardPrimary
-                  ? 'Ranked by community votes, gifts, story boosts, and engagement across Africa.'
-                  : 'Real stories from every corner of Africa. Watch, vote, support creators, and boost standout clips.'}
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <button
-                type="button"
-                onClick={toggleDataSaver}
-                aria-pressed={dataSaver}
-                className={`min-h-[44px] px-3.5 py-2 rounded-xl border text-xs font-semibold flex items-center gap-2 transition-colors whitespace-nowrap cursor-pointer ${
-                  dataSaver
-                    ? 'bg-[#ECFDF5] border-[#0E7C5B] text-[#0E7C5B]'
-                    : 'bg-white border-[#E7E5E0] text-[#5E5D59] hover:text-[#141413]'
-                }`}
-              >
-                <Wifi className="w-4 h-4 shrink-0" />
-                <span>Data Saver: {dataSaver ? 'ON' : 'OFF'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={onOpenSubscriptionsPage}
-                className="min-h-[44px] px-3.5 py-2 rounded-xl border border-[#E7E5E0] bg-white text-xs font-semibold text-[#141413] hover:border-[#0E7C5B] hover:text-[#0E7C5B] flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
-              >
-                <Crown className="w-4 h-4 text-[#D97706]" />
-                <span>{hasProSubscription ? 'Pro Active' : 'Subscriptions'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void handleOpenUpload()}
-                className="min-h-[44px] px-4 py-2 rounded-xl bg-[#0E7C5B] text-white text-sm font-semibold flex items-center gap-2 hover:bg-[#095E44] cursor-pointer whitespace-nowrap"
-              >
-                <Upload className="w-4 h-4" />
-                <span>{myRoundEntry ? 'My Round Story' : 'Upload Story'}</span>
-              </button>
-            </div>
-          </div>
-
-          {!isLeaderboardPrimary && (
-            <>
-              {/* Search & Feed Scope Toolbar */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="w-4 h-4 text-[#5E5D59] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="search"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search stories, creators, or African cities..."
-                    aria-label="Search African stories"
-                    className="w-full min-h-[44px] pl-10 pr-9 py-2 bg-white border border-[#E7E5E0] rounded-xl text-base sm:text-sm text-[#141413] placeholder-[#9E9A93] focus:outline-none focus:border-[#0E7C5B]"
-                  />
-                  {searchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setSearchQuery('')}
-                      aria-label="Clear search"
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-[#5E5D59] hover:text-[#141413] cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-4 sm:pt-6 pb-24 md:pb-16">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          {/* Primary Column: Clean TikTok-Style Feed */}
+          <div className="lg:col-span-7 space-y-4">
+            {mode === 'following' ? (
+              /* Friendly Following / Friends Header + Discover Creators */
+              <div className="max-w-[440px] mx-auto space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h1 className="font-display text-xl sm:text-2xl font-bold text-[#141413]">
+                      Following &amp; Friends
+                    </h1>
+                    <p className="text-xs text-[#5E5D59]">
+                      Stories from people you follow across Africa
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={toggleDataSaver}
+                    aria-pressed={dataSaver}
+                    title="Toggle Data Saver"
+                    className={`min-h-[38px] px-3 py-1.5 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                      dataSaver
+                        ? 'bg-[#ECFDF5] border-[#0E7C5B] text-[#0E7C5B]'
+                        : 'bg-white border-[#E7E5E0] text-[#5E5D59] hover:text-[#141413]'
+                    }`}
+                  >
+                    <Wifi className="w-3.5 h-3.5" />
+                    <span>{dataSaver ? 'Data Saver ON' : 'Data Saver'}</span>
+                  </button>
                 </div>
 
-                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-                  <div className="inline-flex items-center p-1 bg-white border border-[#E7E5E0] rounded-xl">
+                {suggestedFriends.length > 0 && (
+                  <section
+                    aria-label="Friends and Creators to Follow"
+                    className="bg-white border border-[#E7E5E0] rounded-2xl p-3.5 space-y-2.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-[#141413] inline-flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5 text-[#0E7C5B]" />
+                        Find Friends &amp; Storytellers
+                      </span>
+                      <span className="text-[11px] text-[#5E5D59] tabular-nums">
+                        {followingIds.size} following
+                      </span>
+                    </div>
+
+                    <div className="flex items-stretch gap-2.5 overflow-x-auto no-scrollbar pb-0.5">
+                      {suggestedFriends.map((creator) => {
+                        const isFollowingCreator = followingIds.has(creator.uid);
+                        const verified = verifiedBadges[creator.uid];
+                        return (
+                          <div
+                            key={creator.uid}
+                            className="w-36 shrink-0 rounded-xl bg-[#FAF9F7] border border-[#E7E5E0] p-2.5 flex flex-col justify-between gap-2"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => onViewProfile(creator.uid)}
+                              className="flex flex-col items-start gap-1.5 text-left cursor-pointer group"
+                            >
+                              {creator.avatarUrl ? (
+                                <img
+                                  src={creator.avatarUrl}
+                                  alt={creator.displayName}
+                                  referrerPolicy="no-referrer"
+                                  className="w-9 h-9 rounded-full object-cover border border-[#E7E5E0]"
+                                />
+                              ) : (
+                                <div className="w-9 h-9 rounded-full bg-[#141413] text-white text-xs font-bold flex items-center justify-center">
+                                  {creator.displayName.charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                              <div className="w-full min-w-0">
+                                <div className="flex items-center gap-1">
+                                  <span className="text-xs font-bold text-[#141413] truncate group-hover:underline">
+                                    {creator.displayName}
+                                  </span>
+                                  {verified && (
+                                    <BadgeCheck className="w-3.5 h-3.5 fill-[#0E7C5B] text-white shrink-0" />
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-[#5E5D59] truncate">
+                                  {creator.location}
+                                </p>
+                              </div>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onToggleFollow({
+                                  uid: creator.uid,
+                                  displayName: creator.displayName,
+                                  avatarUrl: creator.avatarUrl,
+                                  location: creator.location,
+                                })
+                              }
+                              className={`w-full min-h-[32px] px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer ${
+                                isFollowingCreator
+                                  ? 'bg-white border border-[#E7E5E0] text-[#5E5D59] hover:text-[#141413]'
+                                  : 'bg-[#0E7C5B] text-white hover:bg-[#095E44]'
+                              }`}
+                            >
+                              {isFollowingCreator ? 'Following' : 'Follow'}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                )}
+              </div>
+            ) : (
+              /* Friendly, Uncluttered TikTok-Style Feed Top Bar */
+              <div className="max-w-[440px] mx-auto space-y-2.5">
+                <div className="flex items-center justify-between gap-2 px-1">
+                  <div className="flex items-center gap-5">
                     <button
                       type="button"
-                      onClick={() => {
-                        setFeedScope('for_you');
-                        setMobilePanel('feed');
-                      }}
-                      className={`min-h-[36px] px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
+                      onClick={() => setFeedScope('for_you')}
+                      className={`py-1.5 text-sm font-semibold border-b-2 transition-colors cursor-pointer ${
                         feedScope === 'for_you'
-                          ? 'bg-[#141413] text-white'
-                          : 'text-[#5E5D59] hover:text-[#141413]'
+                          ? 'border-[#141413] text-[#141413]'
+                          : 'border-transparent text-[#5E5D59] hover:text-[#141413]'
                       }`}
                     >
                       For You
@@ -488,473 +507,250 @@ export function VideosArenaView({
                     <button
                       type="button"
                       onClick={() => void handleSelectProtectedScope('following')}
-                      className={`min-h-[36px] px-3.5 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
+                      className={`py-1.5 text-sm font-semibold border-b-2 transition-colors cursor-pointer ${
                         feedScope === 'following'
-                          ? 'bg-[#141413] text-white'
-                          : 'text-[#5E5D59] hover:text-[#141413]'
+                          ? 'border-[#141413] text-[#141413]'
+                          : 'border-transparent text-[#5E5D59] hover:text-[#141413]'
                       }`}
                     >
-                      <Users className="w-3.5 h-3.5" />
-                      <span>Following</span>
+                      Following
                     </button>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
                     <button
                       type="button"
-                      onClick={() => void handleSelectProtectedScope('saved')}
-                      className={`min-h-[36px] px-3.5 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
-                        feedScope === 'saved'
-                          ? 'bg-[#141413] text-white'
-                          : 'text-[#5E5D59] hover:text-[#141413]'
+                      onClick={toggleDataSaver}
+                      aria-pressed={dataSaver}
+                      title={dataSaver ? 'Data Saver ON' : 'Data Saver OFF'}
+                      className={`min-h-[38px] px-2.5 py-1.5 rounded-lg border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+                        dataSaver
+                          ? 'bg-[#ECFDF5] border-[#0E7C5B] text-[#0E7C5B]'
+                          : 'bg-white border-[#E7E5E0] text-[#5E5D59] hover:text-[#141413]'
                       }`}
                     >
-                      <Bookmark className="w-3.5 h-3.5" />
-                      <span>Saved</span>
+                      <Wifi className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">{dataSaver ? 'Saver ON' : 'Data Saver'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowFilters((p) => !p)}
+                      aria-expanded={showFilters}
+                      aria-label="Search and filter stories"
+                      className={`min-h-[38px] px-2.5 py-1.5 rounded-lg border text-xs font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+                        showFilters || hasActiveFilter
+                          ? 'bg-[#141413] border-[#141413] text-white'
+                          : 'bg-white border-[#E7E5E0] text-[#5E5D59] hover:text-[#141413]'
+                      }`}
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Filter</span>
                     </button>
                   </div>
                 </div>
-              </div>
 
-              {/* Pan-African Region Filter + Feed Sort Strip */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-                  <Globe2 className="w-4 h-4 text-[#0E7C5B] shrink-0" />
-                  {AFRICAN_REGIONS.map((region) => {
-                    const active = selectedRegion === region;
-                    return (
-                      <button
-                        key={region}
-                        type="button"
-                        onClick={() => setSelectedRegion(region)}
-                        className={`min-h-[36px] px-3 py-1 rounded-xl text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                          active
-                            ? 'bg-[#0E7C5B] text-white'
-                            : 'bg-white border border-[#E7E5E0] text-[#5E5D59] hover:text-[#141413]'
-                        }`}
-                      >
-                        {region}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div
-                  role="group"
-                  aria-label="Sort African stories"
-                  className="inline-flex items-center gap-1 p-1 bg-white border border-[#E7E5E0] rounded-xl self-start sm:self-auto shrink-0"
-                >
-                  {[
-                    { id: 'trending' as const, label: 'Trending', Icon: TrendingUp },
-                    { id: 'boosted' as const, label: 'Boosted', Icon: Zap },
-                    { id: 'latest' as const, label: 'Latest', Icon: Clock },
-                  ].map(({ id, label, Icon }) => {
-                    const active = feedSort === id;
-                    return (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => setFeedSort(id)}
-                        className={`min-h-[32px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap ${
-                          active
-                            ? 'bg-[#ECFDF5] text-[#0E7C5B]'
-                            : 'text-[#5E5D59] hover:text-[#141413]'
-                        }`}
-                      >
-                        <Icon className="w-3.5 h-3.5" />
-                        <span>{label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </>
-          )}
-        </section>
-
-        {/* Mobile Panel Switcher (< lg) */}
-        {!isLeaderboardPrimary && (
-          <div className="flex lg:hidden items-center gap-1.5 bg-white border border-[#E7E5E0] rounded-xl p-1">
-            {[
-              { id: 'feed' as const, label: `Stories (${filteredVideos.length})` },
-              { id: 'leaderboard' as const, label: 'Top 10' },
-              { id: 'rewards' as const, label: 'Rewards & Winner' },
-            ].map((tab) => {
-              const active = mobilePanel === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setMobilePanel(tab.id)}
-                  className={`flex-1 min-h-[44px] px-2 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
-                    active ? 'bg-[#0E7C5B] text-white' : 'text-[#5E5D59] hover:text-[#141413]'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Main Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Primary Column: Vertical African Stories Feed (or Leaderboard primary when on Leaderboard view) */}
-          {!isLeaderboardPrimary ? (
-            <div
-              className={`lg:col-span-7 space-y-6 ${
-                mobilePanel === 'feed' ? 'block' : 'hidden lg:block'
-              }`}
-            >
-              {/* Instant Upload Prompt */}
-              <div className="max-w-[440px] mx-auto bg-white border border-[#E7E5E0] rounded-2xl p-3.5 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-10 h-10 rounded-full bg-[#ECFDF5] text-[#0E7C5B] flex items-center justify-center shrink-0">
-                    <Video className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-[#141413] truncate">
-                      {myRoundEntry
-                        ? `Your ${round.label} story is live`
-                        : 'Tell an African story (30s–90s)'}
-                    </p>
-                    <p className="text-xs text-[#5E5D59] truncate">
-                      Video only · Under 15 MB · 1 upload per 14 days
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void handleOpenUpload()}
-                  className="min-h-[40px] px-3.5 py-2 rounded-xl bg-[#0E7C5B] text-white text-xs font-semibold hover:bg-[#095E44] shrink-0 cursor-pointer"
-                >
-                  {myRoundEntry ? 'View Status' : 'Upload'}
-                </button>
-              </div>
-
-              {/* Rising African Storytellers Discovery Strip */}
-              {feedScope === 'for_you' && risingStorytellers.length > 0 && (
-                <section
-                  aria-label="Rising African Storytellers"
-                  className="max-w-[440px] mx-auto bg-white border border-[#E7E5E0] rounded-2xl p-3.5 space-y-2.5"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <Users className="w-4 h-4 text-[#0E7C5B]" />
-                      <h2 className="text-xs font-bold text-[#141413] uppercase tracking-wide">
-                        Rising Voices Across Africa
-                      </h2>
-                    </div>
-                    <span className="text-[11px] text-[#5E5D59]">Discover &amp; Follow</span>
-                  </div>
-
-                  <div className="flex items-stretch gap-2.5 overflow-x-auto no-scrollbar pb-0.5">
-                    {risingStorytellers.map((creator) => {
-                      const isFollowingCreator = followingIds.has(creator.uid);
-                      const verified = verifiedBadges[creator.uid];
-                      return (
-                        <div
-                          key={creator.uid}
-                          className="w-36 shrink-0 rounded-xl bg-[#FAF9F7] border border-[#E7E5E0] p-2.5 flex flex-col justify-between gap-2"
+                {/* Expandable Compact Filter Drawer (Hidden by Default) */}
+                {showFilters && (
+                  <div className="bg-white border border-[#E7E5E0] rounded-2xl p-3.5 space-y-3">
+                    <div className="relative">
+                      <Search className="w-4 h-4 text-[#5E5D59] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <input
+                        type="search"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search stories, creators, or cities..."
+                        aria-label="Search African stories"
+                        className="w-full min-h-[40px] pl-9 pr-8 py-1.5 bg-[#FAF9F7] border border-[#E7E5E0] rounded-xl text-sm text-[#141413] placeholder-[#9E9A93] focus:outline-none focus:border-[#0E7C5B]"
+                      />
+                      {searchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setSearchQuery('')}
+                          aria-label="Clear search"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[#5E5D59] hover:text-[#141413] cursor-pointer"
                         >
-                          <button
-                            type="button"
-                            onClick={() => onViewProfile(creator.uid)}
-                            className="flex flex-col items-start gap-1.5 text-left cursor-pointer group"
-                          >
-                            {creator.avatarUrl ? (
-                              <img
-                                src={creator.avatarUrl}
-                                alt={creator.displayName}
-                                referrerPolicy="no-referrer"
-                                className="w-9 h-9 rounded-full object-cover border border-[#E7E5E0]"
-                              />
-                            ) : (
-                              <div className="w-9 h-9 rounded-full bg-[#141413] text-white text-xs font-bold flex items-center justify-center">
-                                {creator.displayName.charAt(0).toUpperCase()}
-                              </div>
-                            )}
-                            <div className="w-full min-w-0">
-                              <div className="flex items-center gap-1">
-                                <span className="text-xs font-bold text-[#141413] truncate group-hover:underline">
-                                  {creator.displayName}
-                                </span>
-                                {verified && (
-                                  <BadgeCheck className="w-3.5 h-3.5 fill-[#0E7C5B] text-white shrink-0" />
-                                )}
-                              </div>
-                              <p className="text-[11px] text-[#5E5D59] truncate">
-                                {creator.location}
-                              </p>
-                            </div>
-                          </button>
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
 
+                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                      {AFRICAN_REGIONS.map((region) => {
+                        const active = selectedRegion === region;
+                        return (
                           <button
+                            key={region}
                             type="button"
-                            onClick={() =>
-                              onToggleFollow({
-                                uid: creator.uid,
-                                displayName: creator.displayName,
-                                avatarUrl: creator.avatarUrl,
-                                location: creator.location,
-                              })
-                            }
-                            className={`w-full min-h-[30px] px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors cursor-pointer ${
-                              isFollowingCreator
-                                ? 'bg-white border border-[#E7E5E0] text-[#5E5D59] hover:text-[#141413]'
-                                : 'bg-[#0E7C5B] text-white hover:bg-[#095E44]'
+                            onClick={() => setSelectedRegion(region)}
+                            className={`min-h-[32px] px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                              active
+                                ? 'bg-[#0E7C5B] text-white'
+                                : 'bg-[#FAF9F7] border border-[#E7E5E0] text-[#5E5D59] hover:text-[#141413]'
                             }`}
                           >
-                            {isFollowingCreator ? 'Following' : 'Follow'}
+                            {region}
                           </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </section>
-              )}
+                        );
+                      })}
+                    </div>
 
-              {videosLoading ? (
-                <div className="max-w-[440px] mx-auto aspect-[9/16] max-h-[65dvh] rounded-2xl bg-white border border-[#E7E5E0] flex flex-col items-center justify-center gap-3 p-6 text-center">
-                  <Film className="w-8 h-8 text-[#0E7C5B] animate-pulse" />
-                  <p className="text-sm font-medium text-[#5E5D59]">Loading African stories...</p>
-                </div>
-              ) : filteredVideos.length === 0 ? (
-                <div className="max-w-[440px] mx-auto rounded-2xl bg-white border border-[#E7E5E0] p-8 text-center space-y-4">
-                  <div className="w-12 h-12 rounded-2xl bg-[#ECFDF5] text-[#0E7C5B] flex items-center justify-center mx-auto">
-                    <Video className="w-6 h-6" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <h2 className="font-display text-lg font-bold text-[#141413]">
-                      {feedScope === 'saved'
-                        ? 'No saved stories yet'
-                        : feedScope === 'following'
-                          ? 'No stories from creators you follow yet'
-                          : searchQuery || selectedRegion !== 'All Africa'
-                            ? 'No matching stories found'
-                            : 'No African stories uploaded yet in this round'}
-                    </h2>
-                    <p className="text-sm text-[#5E5D59]">
-                      {feedScope === 'saved'
-                        ? 'Tap the bookmark icon on any story video to save it here.'
-                        : feedScope === 'following'
-                          ? 'Explore For You to follow storytellers from across Africa.'
-                          : 'Share a 30s–90s video (<15 MB) telling an African story.'}
-                    </p>
-                  </div>
-                  <div className="flex items-center justify-center gap-2.5 flex-wrap">
-                    {feedScope !== 'for_you' || selectedRegion !== 'All Africa' ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setFeedScope('for_you');
-                          setSelectedRegion('All Africa');
-                          setSearchQuery('');
-                        }}
-                        className="min-h-[44px] px-4 py-2 rounded-xl bg-[#0E7C5B] text-white text-sm font-semibold cursor-pointer"
-                      >
-                        Browse All Africa
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => void handleOpenUpload()}
-                        className="min-h-[44px] px-4 py-2 rounded-xl bg-[#0E7C5B] text-white text-sm font-semibold inline-flex items-center gap-2 cursor-pointer"
-                      >
-                        <Upload className="w-4 h-4" />
-                        <span>Upload First Story</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                filteredVideos.map((video) => (
-                  <VideoReelCard
-                    key={video.id}
-                    video={video}
-                    rank={rankLookup.get(video.id)}
-                    dataSaver={dataSaver}
-                    dailyVote={dailyVote}
-                    verifiedBadges={verifiedBadges}
-                    isFollowing={followingIds.has(video.authorId)}
-                    isSubscribedToCreator={subscribedTargetIds.has(video.authorId)}
-                    isSaved={savedVideoIds.has(video.id)}
-                    onToggleFollow={onToggleFollow}
-                    onSubscribeCreator={onSubscribeCreator}
-                    onToggleSaved={onToggleSaved}
-                    onVote={handleVote}
-                    onOpenBoost={onOpenBoost}
-                    onViewProfile={onViewProfile}
-                    onNotify={onNotify}
-                  />
-                ))
-              )}
-            </div>
-          ) : (
-            /* Full Leaderboard View when Leaderboard nav tab is selected */
-            <div className="lg:col-span-7 space-y-5">
-              <section
-                aria-label="Top 10 African Storytellers"
-                className="bg-white border border-[#E7E5E0] rounded-2xl p-5 space-y-4"
-              >
-                <div className="flex items-center justify-between gap-2 border-b border-[#E7E5E0] pb-3.5">
-                  <div className="flex items-center gap-2">
-                    <Award className="w-5 h-5 text-[#0E7C5B]" />
-                    <h2 className="font-display text-lg font-bold text-[#141413]">
-                      {round.label} Top 10 Leaderboard
-                    </h2>
-                  </div>
-                  <span className="text-xs text-[#5E5D59]">Support, Boosts, Votes &amp; Views</span>
-                </div>
-
-                {top10Leaderboard.length === 0 ? (
-                  <p className="text-sm text-[#5E5D59] py-6 text-center">
-                    No stories posted yet in {round.label}.
-                  </p>
-                ) : (
-                  <ol className="space-y-2.5">
-                    {top10Leaderboard.map((item, idx) => {
-                      const rank = idx + 1;
-                      const badgeStyle =
-                        rank === 1
-                          ? 'bg-[#FEF3C7] text-[#92400E] border-[#FCD34D]'
-                          : rank === 2
-                            ? 'bg-[#F3F4F6] text-[#374151] border-[#D1D5DB]'
-                            : rank === 3
-                              ? 'bg-[#FFEDD5] text-[#9A3412] border-[#FDBA74]'
-                              : 'bg-[#FAF9F7] text-[#5E5D59] border-[#E7E5E0]';
-
-                      const tierLabel =
-                        rank === 1
-                          ? 'Gold'
-                          : rank === 2
-                            ? 'Silver'
-                            : rank === 3
-                              ? 'Bronze'
-                              : `#${rank}`;
-
-                      const isBoosted = item.boostedUntil > nowMs;
-
-                      return (
-                        <li
-                          key={item.id}
-                          className="p-3 rounded-xl bg-[#FAF9F7] border border-[#E7E5E0] flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div
-                              className={`w-11 h-11 rounded-xl border flex flex-col items-center justify-center shrink-0 font-bold text-[11px] leading-tight ${badgeStyle}`}
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-[#F0EEE9]">
+                      <div className="inline-flex items-center gap-1">
+                        {[
+                          { id: 'trending' as const, label: 'Trending', Icon: TrendingUp },
+                          { id: 'latest' as const, label: 'Latest', Icon: Clock },
+                        ].map(({ id, label, Icon }) => {
+                          const active = feedSort === id;
+                          return (
+                            <button
+                              key={id}
+                              type="button"
+                              onClick={() => setFeedSort(id)}
+                              className={`min-h-[30px] px-2.5 py-1 rounded-lg text-xs font-semibold inline-flex items-center gap-1 cursor-pointer ${
+                                active
+                                  ? 'bg-[#ECFDF5] text-[#0E7C5B]'
+                                  : 'text-[#5E5D59] hover:text-[#141413]'
+                              }`}
                             >
-                              {rank <= 3 ? <Medal className="w-3.5 h-3.5" /> : null}
-                              <span className="tabular-nums">{tierLabel}</span>
-                            </div>
+                              <Icon className="w-3.5 h-3.5" />
+                              <span>{label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
 
-                            {item.thumbnailUrl ? (
-                              <img
-                                src={item.thumbnailUrl}
-                                alt={item.title}
-                                className="w-11 h-14 rounded-lg object-cover border border-[#E7E5E0] shrink-0"
-                              />
-                            ) : (
-                              <div className="w-11 h-14 rounded-lg bg-white border border-[#E7E5E0] flex items-center justify-center text-[#0E7C5B] shrink-0">
-                                <Film className="w-4 h-4" />
-                              </div>
-                            )}
-
-                            <div className="min-w-0">
-                              <button
-                                type="button"
-                                onClick={() => onViewProfile(item.authorId)}
-                                className="text-left group cursor-pointer"
-                              >
-                                <p className="text-sm font-bold text-[#141413] truncate group-hover:underline">
-                                  {item.title}
-                                </p>
-                                <p className="text-xs text-[#5E5D59] truncate">
-                                  {item.authorName} · {item.authorLocation || 'Africa'}
-                                </p>
-                              </button>
-                              <div className="flex flex-wrap items-center gap-2 mt-1 text-[11px] text-[#5E5D59] tabular-nums">
-                                <span>{formatCompactCount(item.votesCount)} votes</span>
-                                <span aria-hidden="true">·</span>
-                                <span>
-                                  {item.giftsCount} {item.giftsCount === 1 ? 'gift' : 'gifts'}
-                                </span>
-                                <span aria-hidden="true">·</span>
-                                <span>{formatCompactCount(item.viewsCount)} views</span>
-                                {isBoosted && (
-                                  <span className="inline-flex items-center gap-0.5 text-[#0E7C5B] font-semibold">
-                                    <Flame className="w-3 h-3" />
-                                    Boosted
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => onViewProfile(item.authorId)}
-                            className="min-h-[38px] px-3 py-1.5 rounded-lg bg-white border border-[#E7E5E0] text-xs font-semibold text-[#141413] hover:border-[#0E7C5B] hover:text-[#0E7C5B] shrink-0 cursor-pointer"
-                          >
-                            View Creator
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ol>
+                      <button
+                        type="button"
+                        onClick={() => void handleSelectProtectedScope('saved')}
+                        className={`text-xs font-semibold px-2 py-1 rounded-lg cursor-pointer ${
+                          feedScope === 'saved'
+                            ? 'bg-[#141413] text-white'
+                            : 'text-[#0E7C5B] hover:underline'
+                        }`}
+                      >
+                        Saved ({savedVideoIds.size})
+                      </button>
+                    </div>
+                  </div>
                 )}
-              </section>
-            </div>
-          )}
+              </div>
+            )}
 
-          {/* Right Rail: Round Reward, Countdown, Winner Spotlight, & Compact Top 10 */}
-          <aside className="lg:col-span-5 space-y-5 lg:sticky lg:top-20">
-            {/* Round Reward & Countdown Card (NO "Sponsored by") */}
+            {/* Vertical Video Reel Feed */}
+            {videosLoading ? (
+              <div className="max-w-[440px] mx-auto aspect-[9/16] max-h-[65dvh] rounded-2xl bg-white border border-[#E7E5E0] flex flex-col items-center justify-center gap-3 p-6 text-center">
+                <Film className="w-8 h-8 text-[#0E7C5B] animate-pulse" />
+                <p className="text-sm font-medium text-[#5E5D59]">Loading African stories...</p>
+              </div>
+            ) : filteredVideos.length === 0 ? (
+              <div className="max-w-[440px] mx-auto rounded-2xl bg-white border border-[#E7E5E0] p-8 text-center space-y-4">
+                <div className="w-12 h-12 rounded-2xl bg-[#ECFDF5] text-[#0E7C5B] flex items-center justify-center mx-auto">
+                  <Video className="w-6 h-6" />
+                </div>
+                <div className="space-y-1.5">
+                  <h2 className="font-display text-lg font-bold text-[#141413]">
+                    {effectiveScope === 'saved'
+                      ? 'No saved stories yet'
+                      : effectiveScope === 'following'
+                        ? 'No stories from friends you follow yet'
+                        : searchQuery || selectedRegion !== 'All Africa'
+                          ? 'No matching stories found'
+                          : 'No stories uploaded yet in this round'}
+                  </h2>
+                  <p className="text-sm text-[#5E5D59]">
+                    {effectiveScope === 'saved'
+                      ? 'Tap the bookmark icon on any story video to save it here.'
+                      : effectiveScope === 'following'
+                        ? 'Follow storytellers above or switch to For You to watch African stories.'
+                        : 'Share a 30s–90s video under 15 MB telling an African story.'}
+                  </p>
+                </div>
+                <div className="flex items-center justify-center gap-2.5 flex-wrap">
+                  {effectiveScope !== 'for_you' || selectedRegion !== 'All Africa' || searchQuery ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFeedScope('for_you');
+                        setSelectedRegion('All Africa');
+                        setSearchQuery('');
+                      }}
+                      className="min-h-[44px] px-4 py-2 rounded-xl bg-[#0E7C5B] text-white text-sm font-semibold cursor-pointer"
+                    >
+                      Explore For You
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void handleOpenUpload()}
+                      className="min-h-[44px] px-4 py-2 rounded-xl bg-[#0E7C5B] text-white text-sm font-semibold inline-flex items-center gap-2 cursor-pointer"
+                    >
+                      <Upload className="w-4 h-4" />
+                      <span>Upload First Story</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              filteredVideos.map((video) => (
+                <VideoReelCard
+                  key={video.id}
+                  video={video}
+                  rank={rankLookup.get(video.id)}
+                  dataSaver={dataSaver}
+                  dailyVote={dailyVote}
+                  verifiedBadges={verifiedBadges}
+                  isFollowing={followingIds.has(video.authorId)}
+                  isSaved={savedVideoIds.has(video.id)}
+                  onToggleFollow={onToggleFollow}
+                  onToggleSaved={onToggleSaved}
+                  onVote={handleVote}
+                  onViewProfile={onViewProfile}
+                  onNotify={onNotify}
+                />
+              ))
+            )}
+          </div>
+
+          {/* Calm Desktop Sidebar (Hidden on Mobile so Mobile Feed is Pure TikTok-Style) */}
+          <aside className="hidden lg:block lg:col-span-5 space-y-5 lg:sticky lg:top-20">
             <section
-              aria-label="Round Reward and Countdown"
-              className={`bg-white border border-[#E7E5E0] rounded-2xl p-4 sm:p-5 space-y-4 ${
-                isLeaderboardPrimary || mobilePanel === 'rewards' ? 'block' : 'hidden lg:block'
-              }`}
+              aria-label="Round Countdown and Daily Vote"
+              className="bg-white border border-[#E7E5E0] rounded-2xl p-5 space-y-4"
             >
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-medium text-[#5E5D59]">
                     {round.label} Storyteller Reward
                   </p>
-                  <p className="font-display text-xl sm:text-2xl font-bold text-[#141413]">
+                  <p className="font-display text-xl font-bold text-[#141413]">
                     Round Champion Award
                   </p>
-                  <p className="text-xs text-[#5E5D59]">
-                    Winner picked from community support &amp; story boosts
-                  </p>
                 </div>
-                <div className="w-11 h-11 rounded-xl bg-[#FEF3C7] text-[#D97706] flex items-center justify-center shrink-0">
+                <div className="w-10 h-10 rounded-xl bg-[#FEF3C7] text-[#D97706] flex items-center justify-center shrink-0">
                   <Trophy className="w-5 h-5" />
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-1.5 text-xs font-medium text-[#5E5D59]">
-                  <Clock className="w-3.5 h-3.5 text-[#0E7C5B]" />
-                  <span>Next Winner Announcement</span>
-                </div>
-                <div className="grid grid-cols-4 gap-2 text-center">
-                  {[
-                    { label: 'Days', value: String(countdown.days).padStart(2, '0') },
-                    { label: 'Hours', value: String(countdown.hours).padStart(2, '0') },
-                    { label: 'Mins', value: String(countdown.minutes).padStart(2, '0') },
-                    { label: 'Secs', value: String(countdown.seconds).padStart(2, '0') },
-                  ].map((unit) => (
-                    <div
-                      key={unit.label}
-                      className="bg-[#FAF9F7] border border-[#E7E5E0] rounded-xl py-2 px-1"
-                    >
-                      <div className="font-display text-lg font-bold text-[#141413] tabular-nums leading-none">
-                        {unit.value}
-                      </div>
-                      <div className="text-[10px] text-[#5E5D59] mt-1 font-medium">
-                        {unit.label}
-                      </div>
+              <div className="grid grid-cols-4 gap-2 text-center">
+                {[
+                  { label: 'Days', value: String(countdown.days).padStart(2, '0') },
+                  { label: 'Hours', value: String(countdown.hours).padStart(2, '0') },
+                  { label: 'Mins', value: String(countdown.minutes).padStart(2, '0') },
+                  { label: 'Secs', value: String(countdown.seconds).padStart(2, '0') },
+                ].map((unit) => (
+                  <div
+                    key={unit.label}
+                    className="bg-[#FAF9F7] border border-[#E7E5E0] rounded-xl py-2 px-1"
+                  >
+                    <div className="font-display text-lg font-bold text-[#141413] tabular-nums leading-none">
+                      {unit.value}
                     </div>
-                  ))}
-                </div>
+                    <div className="text-[10px] text-[#5E5D59] mt-1 font-medium">
+                      {unit.label}
+                    </div>
+                  </div>
+                ))}
               </div>
 
               <div className="pt-2 border-t border-[#E7E5E0] space-y-2 text-xs text-[#5E5D59]">
@@ -962,137 +758,54 @@ export function VideosArenaView({
                   <ThumbsUp className="w-3.5 h-3.5 text-[#0E7C5B] shrink-0" />
                   <span>
                     {dailyVote
-                      ? 'Today’s 1 free daily vote is used. Resets tomorrow.'
-                      : 'You have 1 free vote today to support an African story.'}
+                      ? 'Today’s 1 free daily vote is used.'
+                      : 'You have 1 free vote today to support a story.'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-2 bg-[#FAF9F7] border border-[#E7E5E0] rounded-xl px-3 py-2">
-                  <div className="flex items-center gap-2 text-[#141413] font-semibold">
-                    <Flame className="w-3.5 h-3.5 text-[#D97706] shrink-0" />
-                    <span>
-                      {streak.count > 0
-                        ? `${streak.count}-day supporter streak`
-                        : 'Start a daily supporter streak'}
-                    </span>
-                  </div>
-                  <span className="text-[11px] text-[#0E7C5B] font-semibold">
-                    {dailyVote ? 'Active today' : 'Vote to keep'}
+                  <span className="inline-flex items-center gap-1.5 font-semibold text-[#141413]">
+                    <Flame className="w-3.5 h-3.5 text-[#D97706]" />
+                    {streak.count > 0 ? `${streak.count}-day supporter streak` : 'Daily supporter streak'}
+                  </span>
+                  <span className="text-[11px] font-semibold text-[#0E7C5B]">
+                    {dailyVote ? 'Active today' : 'Vote to build'}
                   </span>
                 </div>
               </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={onOpenDashboardLeaderboard}
+                  className="flex-1 min-h-[38px] px-3 py-1.5 rounded-xl border border-[#E7E5E0] bg-[#FAF9F7] text-xs font-semibold text-[#141413] hover:border-[#0E7C5B] inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Award className="w-3.5 h-3.5 text-[#0E7C5B]" />
+                  <span>Top 10 Leaderboard</span>
+                </button>
+                {hasCreatorPass ? (
+                  <span className="flex-1 min-h-[38px] px-3 py-1.5 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] text-xs font-semibold text-[#0E7C5B] inline-flex items-center justify-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Creator Pass Active</span>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={onOpenSubscribe}
+                    className="flex-1 min-h-[38px] px-3 py-1.5 rounded-xl bg-[#0E7C5B] text-white text-xs font-semibold hover:bg-[#095E44] cursor-pointer"
+                  >
+                    Subscribe ($10/mo)
+                  </button>
+                )}
+              </div>
             </section>
 
-            {/* Previous Winner Spotlight */}
-            <div
-              className={
-                isLeaderboardPrimary || mobilePanel === 'rewards' ? 'block' : 'hidden lg:block'
-              }
-            >
-              <WinnerSpotlightCard
-                config={config}
-                roundVideos={roundVideos}
-                isAdmin={isAdmin}
-                dataSaver={dataSaver}
-                onSelectWinner={handleSelectWinner}
-              />
-            </div>
-
-            {/* Compact Top 10 Rail (only when Stories feed is primary) */}
-            {!isLeaderboardPrimary && (
-              <section
-                aria-label="Top 10 Leaderboard"
-                className={`bg-white border border-[#E7E5E0] rounded-2xl p-4 sm:p-5 space-y-3.5 ${
-                  mobilePanel === 'leaderboard' ? 'block' : 'hidden lg:block'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2 border-b border-[#E7E5E0] pb-3">
-                  <div className="flex items-center gap-2">
-                    <Award className="w-5 h-5 text-[#0E7C5B]" />
-                    <h2 className="font-display text-base font-bold text-[#141413]">
-                      Top 10 Storytellers
-                    </h2>
-                  </div>
-                  <span className="text-xs text-[#5E5D59]">Support &amp; Views</span>
-                </div>
-
-                {top10Leaderboard.length === 0 ? (
-                  <p className="text-xs text-[#5E5D59] py-4 text-center">
-                    No stories posted yet in {round.label}.
-                  </p>
-                ) : (
-                  <ol className="space-y-2">
-                    {top10Leaderboard.map((item, idx) => {
-                      const rank = idx + 1;
-                      const badgeStyle =
-                        rank === 1
-                          ? 'bg-[#FEF3C7] text-[#92400E] border-[#FCD34D]'
-                          : rank === 2
-                            ? 'bg-[#F3F4F6] text-[#374151] border-[#D1D5DB]'
-                            : rank === 3
-                              ? 'bg-[#FFEDD5] text-[#9A3412] border-[#FDBA74]'
-                              : 'bg-[#FAF9F7] text-[#5E5D59] border-[#E7E5E0]';
-
-                      const tierLabel =
-                        rank === 1
-                          ? 'Gold'
-                          : rank === 2
-                            ? 'Silver'
-                            : rank === 3
-                              ? 'Bronze'
-                              : `#${rank}`;
-
-                      return (
-                        <li key={item.id}>
-                          <button
-                            type="button"
-                            onClick={() => jumpToVideo(item.id)}
-                            className="w-full min-h-[56px] p-2.5 rounded-xl bg-[#FAF9F7] hover:bg-[#F2F0EC] border border-[#E7E5E0] flex items-center gap-3 text-left transition-colors cursor-pointer"
-                          >
-                            <div
-                              className={`w-10 h-10 rounded-xl border flex flex-col items-center justify-center shrink-0 font-bold text-[11px] leading-tight ${badgeStyle}`}
-                            >
-                              {rank <= 3 ? <Medal className="w-3.5 h-3.5" /> : null}
-                              <span className="tabular-nums">{tierLabel}</span>
-                            </div>
-
-                            {item.thumbnailUrl ? (
-                              <img
-                                src={item.thumbnailUrl}
-                                alt={item.title}
-                                className="w-10 h-12 rounded-lg object-cover border border-[#E7E5E0] shrink-0"
-                              />
-                            ) : (
-                              <div className="w-10 h-12 rounded-lg bg-white border border-[#E7E5E0] flex items-center justify-center text-[#0E7C5B] shrink-0">
-                                <Film className="w-4 h-4" />
-                              </div>
-                            )}
-
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold text-[#141413] truncate">
-                                {item.title}
-                              </p>
-                              <p className="text-xs text-[#5E5D59] truncate">
-                                {item.authorName} · {item.authorLocation || 'Africa'}
-                              </p>
-                            </div>
-
-                            <div className="text-right shrink-0 space-y-0.5">
-                              <p className="text-xs font-bold text-[#0E7C5B] tabular-nums">
-                                {formatCompactCount(item.votesCount)} votes
-                              </p>
-                              <p className="text-[11px] text-[#5E5D59] tabular-nums flex items-center justify-end gap-1">
-                                <Eye className="w-3 h-3" />
-                                {formatCompactCount(item.viewsCount)}
-                              </p>
-                            </div>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ol>
-                )}
-              </section>
-            )}
+            <WinnerSpotlightCard
+              config={config}
+              roundVideos={roundVideos}
+              isAdmin={isAdmin}
+              dataSaver={dataSaver}
+              onSelectWinner={handleSelectWinner}
+            />
           </aside>
         </div>
       </div>
@@ -1101,8 +814,8 @@ export function VideosArenaView({
         <VideoUploadModal
           round={round}
           existingEntry={myRoundEntry}
-          hasProSubscription={hasProSubscription}
-          onOpenSubscriptions={onOpenSubscriptionsPage}
+          hasCreatorPass={hasCreatorPass}
+          onOpenSubscribe={onOpenSubscribe}
           onClose={() => setUploadModalOpen(false)}
           onUploaded={(created) => {
             setUploadModalOpen(false);

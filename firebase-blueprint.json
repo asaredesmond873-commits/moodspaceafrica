@@ -682,7 +682,7 @@
     },
     "CreatorSubscription": {
       "title": "CreatorSubscription",
-      "description": "Monthly fan subscription to an African storyteller or MoodSpace Creator Pro membership.",
+      "description": "Single $10/month Paystack Creator Pass membership supporting Pan-African currency auto-conversion (GHS, NGN, KES, ZAR, USD).",
       "type": "object",
       "properties": {
         "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
@@ -690,10 +690,13 @@
         "subscriberName": { "type": "string", "minLength": 1, "maxLength": 80 },
         "targetId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
         "targetName": { "type": "string", "minLength": 1, "maxLength": 80 },
-        "planType": { "type": "string", "enum": ["creator_fan", "creator_pro"] },
-        "amountGhs": { "type": "integer" },
-        "provider": { "type": "string", "enum": ["MTN MoMo", "M-Pesa", "Airtel Money", "Telecel Cash", "AirtelTigo Money"] },
-        "maskedPhone": { "type": "string", "minLength": 4, "maxLength": 20 },
+        "planType": { "type": "string", "enum": ["creator_pass"] },
+        "usdAmount": { "type": "integer" },
+        "currency": { "type": "string", "enum": ["GHS", "NGN", "KES", "ZAR", "USD"] },
+        "localAmount": { "type": "number" },
+        "country": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "paymentProvider": { "type": "string", "enum": ["Paystack"] },
+        "paystackReference": { "type": "string", "minLength": 4, "maxLength": 120 },
         "status": { "type": "string", "enum": ["active", "cancelled"] },
         "expiresAt": { "type": "integer" },
         "createdAt": { "type": "string", "format": "date-time" },
@@ -701,9 +704,24 @@
       },
       "required": [
         "id", "subscriberId", "subscriberName", "targetId", "targetName",
-        "planType", "amountGhs", "provider", "maskedPhone", "status",
+        "planType", "usdAmount", "currency", "localAmount", "country",
+        "paymentProvider", "paystackReference", "status",
         "expiresAt", "createdAt", "updatedAt"
       ]
+    },
+    "ProfileView": {
+      "title": "ProfileView",
+      "description": "Profile visit record allowing paid Creator Pass owners to see who viewed their profile.",
+      "type": "object",
+      "properties": {
+        "profileUid": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "viewerId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "viewerName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "viewerAvatar": { "type": "string", "maxLength": 150000 },
+        "viewerLocation": { "type": "string", "maxLength": 100 },
+        "viewedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["profileUid", "viewerId", "viewerName", "viewerAvatar", "viewerLocation", "viewedAt"]
     },
     "SavedVideo": {
       "title": "SavedVideo",
@@ -729,6 +747,10 @@
     "/publicProfiles/{userId}/following/{followingId}": {
       "schema": { "$ref": "#/entities/FollowRecord" },
       "description": "Users followed by this public profile, synchronized atomically with the target's followers list."
+    },
+    "/publicProfiles/{userId}/profileViews/{viewerId}": {
+      "schema": { "$ref": "#/entities/ProfileView" },
+      "description": "Profile views readable exclusively by the profile owner with an active $10/month Creator Pass."
     },
     "/userPrivate/{userId}": {
       "schema": { "$ref": "#/entities/UserPrivate" },
@@ -764,7 +786,7 @@
     },
     "/challengeVideos/{videoId}": {
       "schema": { "$ref": "#/entities/ChallengeVideo" },
-      "description": "14-day round African video story entries (1 per user per round, 30-90s, <15MB)."
+      "description": "14-day round African video story entries (paid Creator Pass required to enter, 1 per user per round, 30-90s, <15MB)."
     },
     "/challengeVideos/{videoId}/chunks/{chunkId}": {
       "schema": { "$ref": "#/entities/ChallengeVideoChunk" },
@@ -780,11 +802,11 @@
     },
     "/challengeVideos/{videoId}/gifts/{giftId}": {
       "schema": { "$ref": "#/entities/ChallengeVideoGift" },
-      "description": "Creator support gift records (Rose 2 GHS, Fire 5 GHS, Lion 20 GHS)."
+      "description": "Legacy video gift records."
     },
     "/challengeVideos/{videoId}/boosts/{boostId}": {
       "schema": { "$ref": "#/entities/ChallengeVideoBoost" },
-      "description": "24-hour mobile money video boost receipts (20 GHS)."
+      "description": "Legacy video boost records."
     },
     "/challengeDailyVotes/{voteId}": {
       "schema": { "$ref": "#/entities/ChallengeDailyVote" },
@@ -796,7 +818,7 @@
     },
     "/creatorSubscriptions/{subId}": {
       "schema": { "$ref": "#/entities/CreatorSubscription" },
-      "description": "Monthly subscriptions supporting African storytellers and MoodSpace Creator Pro memberships."
+      "description": "Single $10/month Paystack Creator Pass subscriptions."
     }
   }
 }

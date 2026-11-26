@@ -1,9 +1,10 @@
 import {
   BadgeCheck,
-  Crown,
+  CheckCircle2,
   Eye,
   Film,
   Heart,
+  Lock,
   MapPin,
   Pencil,
   ThumbsUp,
@@ -16,6 +17,8 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
+  recordProfileView,
+  subscribeMyProfileViewers,
   subscribeProfileFollowers,
   subscribeProfileFollowing,
   subscribePublicProfile,
@@ -24,24 +27,25 @@ import {
 import {
   type ChallengeVideo,
   type FollowRecord,
+  type ProfileViewRecord,
   type PublicProfile,
   type VerifiedBadgeInfo,
 } from '../types';
 import { formatCompactCount, formatDurationSeconds } from '../utils/challengeMedia';
 import { formatFullDate, formatTimestamp } from '../utils/media';
 
-type ProfileTab = 'stories' | 'followers' | 'following';
+type ProfileTab = 'stories' | 'followers' | 'following' | 'views';
 
 interface UserProfileModalProps {
   profileUid: string;
   allVideos: ChallengeVideo[];
   verifiedBadges: Record<string, VerifiedBadgeInfo>;
   followingIds: Set<string>;
-  subscribedTargetIds: Set<string>;
+  hasCreatorPass: boolean;
   onClose: () => void;
   onSelectProfile: (uid: string) => void;
   onToggleFollow: (target: FollowTargetSummary) => void;
-  onSubscribeCreator: (creatorId: string, creatorName: string, location: string) => void;
+  onOpenSubscribe: () => void;
   onJumpToStory?: (videoId: string) => void;
   onOpenEditProfile?: () => void;
 }
@@ -57,11 +61,11 @@ export function UserProfileModal({
   allVideos,
   verifiedBadges,
   followingIds,
-  subscribedTargetIds,
+  hasCreatorPass,
   onClose,
   onSelectProfile,
   onToggleFollow,
-  onSubscribeCreator,
+  onOpenSubscribe,
   onJumpToStory,
   onOpenEditProfile,
 }: UserProfileModalProps) {
@@ -71,7 +75,10 @@ export function UserProfileModal({
   const [profileLoading, setProfileLoading] = useState(true);
   const [followers, setFollowers] = useState<FollowRecord[]>([]);
   const [following, setFollowing] = useState<FollowRecord[]>([]);
+  const [profileViewers, setProfileViewers] = useState<ProfileViewRecord[]>([]);
   const [avatarError, setAvatarError] = useState(false);
+
+  const isSelf = Boolean(user && user.uid === profileUid);
 
   const authorStories = useMemo(
     () => allVideos.filter((v) => v.authorId === profileUid),
@@ -114,6 +121,26 @@ export function UserProfileModal({
     };
   }, [profileUid]);
 
+  // Record a profile view when a signed-in viewer opens someone else's profile
+  useEffect(() => {
+    if (!user || !myProfile || user.uid === profileUid) return;
+    void recordProfileView(profileUid, myProfile);
+  }, [user, myProfile, profileUid]);
+
+  // Paid Creator Pass holders see live profile viewers on their own profile
+  useEffect(() => {
+    if (!isSelf || !hasCreatorPass) {
+      setProfileViewers([]);
+      return;
+    }
+    const unsubViews = subscribeMyProfileViewers(
+      profileUid,
+      setProfileViewers,
+      () => setProfileViewers([])
+    );
+    return () => unsubViews();
+  }, [isSelf, hasCreatorPass, profileUid]);
+
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -127,7 +154,6 @@ export function UserProfileModal({
     };
   }, [onClose]);
 
-  const isSelf = Boolean(user && user.uid === profileUid);
   const resolvedProfile = isSelf && myProfile ? myProfile : liveProfile;
   const displayName =
     resolvedProfile?.displayName || fallbackFromStories?.displayName || 'MoodSpace Storyteller';
@@ -138,11 +164,10 @@ export function UserProfileModal({
   const badge =
     verifiedBadges[profileUid] ||
     (resolvedProfile?.badgeVerified
-      ? { uid: profileUid, verifiedLabel: resolvedProfile.verifiedLabel || 'Verified' }
+      ? { uid: profileUid, verifiedLabel: resolvedProfile.verifiedLabel || 'Verified Creator' }
       : null);
 
   const isFollowingTarget = followingIds.has(profileUid);
-  const isSubscribedTarget = subscribedTargetIds.has(profileUid);
   const initials = displayName
     .split(' ')
     .map((p) => p[0])
@@ -156,6 +181,21 @@ export function UserProfileModal({
     avatarUrl,
     location,
   };
+
+  const tabs: { id: ProfileTab; label: string; count?: number }[] = [
+    { id: 'stories', label: 'Stories', count: authorStories.length },
+    { id: 'followers', label: 'Followers', count: followers.length },
+    { id: 'following', label: 'Following', count: following.length },
+    ...(isSelf
+      ? [
+          {
+            id: 'views' as const,
+            label: 'Profile Views',
+            count: hasCreatorPass ? profileViewers.length : undefined,
+          },
+        ]
+      : []),
+  ];
 
   return (
     <div
@@ -173,7 +213,7 @@ export function UserProfileModal({
         <div className="bg-white border-b border-[#E7E5E0] px-5 py-3.5 flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <h2 className="font-display text-base sm:text-lg font-bold text-[#141413] truncate">
-              {isSelf ? 'Your Public Profile' : displayName}
+              {isSelf ? 'Your Profile' : displayName}
             </h2>
             {badge && (
               <span title={badge.verifiedLabel} className="shrink-0">
@@ -250,57 +290,62 @@ export function UserProfileModal({
 
               <div className="flex items-center gap-2 flex-wrap shrink-0">
                 {isSelf ? (
-                  onOpenEditProfile && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onClose();
-                        onOpenEditProfile();
-                      }}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-[#141413] bg-white border border-[#D4D1CA] rounded-lg hover:border-[#141413] whitespace-nowrap cursor-pointer"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                      Edit Profile
-                    </button>
-                  )
-                ) : (
                   <>
-                    <button
-                      type="button"
-                      disabled={isSubscribedTarget}
-                      onClick={() => onSubscribeCreator(profileUid, displayName, location)}
-                      className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
-                        isSubscribedTarget
-                          ? 'bg-[#FEF3C7] text-[#92400E] border border-[#FCD34D] cursor-default'
-                          : 'bg-[#FAF9F7] text-[#141413] border border-[#D4D1CA] hover:border-[#0E7C5B] hover:text-[#0E7C5B] cursor-pointer'
-                      }`}
-                    >
-                      <Crown className="w-3.5 h-3.5" />
-                      <span>{isSubscribedTarget ? 'Subscribed' : 'Subscribe'}</span>
-                    </button>
+                    {/* One simple Subscribe button inside Profile */}
+                    {hasCreatorPass ? (
+                      <span className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg bg-[#ECFDF5] text-[#0E7C5B] border border-[#A7F3D0] whitespace-nowrap">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Subscribed</span>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          onOpenSubscribe();
+                        }}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0E7C5B] rounded-lg hover:bg-[#095E44] whitespace-nowrap cursor-pointer"
+                      >
+                        Subscribe
+                      </button>
+                    )}
 
-                    <button
-                      type="button"
-                      onClick={() => onToggleFollow(followSummary)}
-                      className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
-                        isFollowingTarget
-                          ? 'bg-[#FAF9F7] text-[#141413] border border-[#D4D1CA] hover:border-[#B91C1C] hover:text-[#B91C1C]'
-                          : 'bg-[#0E7C5B] text-white hover:bg-[#095E44]'
-                      }`}
-                    >
-                      {isFollowingTarget ? (
-                        <>
-                          <UserCheck className="w-3.5 h-3.5" />
-                          <span>Following</span>
-                        </>
-                      ) : (
-                        <>
-                          <UserPlus className="w-3.5 h-3.5" />
-                          <span>Follow</span>
-                        </>
-                      )}
-                    </button>
+                    {onOpenEditProfile && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          onOpenEditProfile();
+                        }}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-[#141413] bg-white border border-[#D4D1CA] rounded-lg hover:border-[#141413] whitespace-nowrap cursor-pointer"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        Edit Profile
+                      </button>
+                    )}
                   </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onToggleFollow(followSummary)}
+                    className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
+                      isFollowingTarget
+                        ? 'bg-[#FAF9F7] text-[#141413] border border-[#D4D1CA] hover:border-[#B91C1C] hover:text-[#B91C1C]'
+                        : 'bg-[#0E7C5B] text-white hover:bg-[#095E44]'
+                    }`}
+                  >
+                    {isFollowingTarget ? (
+                      <>
+                        <UserCheck className="w-3.5 h-3.5" />
+                        <span>Following</span>
+                      </>
+                    ) : (
+                      <>
+                        <UserPlus className="w-3.5 h-3.5" />
+                        <span>Follow</span>
+                      </>
+                    )}
+                  </button>
                 )}
               </div>
             </div>
@@ -318,13 +363,7 @@ export function UserProfileModal({
             )}
 
             <div className="pt-4 border-t border-[#F0EEE9] flex items-center gap-2 overflow-x-auto">
-              {(
-                [
-                  { id: 'stories', label: 'Stories', count: authorStories.length },
-                  { id: 'followers', label: 'Followers', count: followers.length },
-                  { id: 'following', label: 'Following', count: following.length },
-                ] as const
-              ).map((tab) => {
+              {tabs.map((tab) => {
                 const active = activeTab === tab.id;
                 return (
                   <button
@@ -338,7 +377,11 @@ export function UserProfileModal({
                     }`}
                   >
                     <span>{tab.label}</span>
-                    <span className="font-mono tabular-nums opacity-80">{tab.count}</span>
+                    {typeof tab.count === 'number' ? (
+                      <span className="font-mono tabular-nums opacity-80">{tab.count}</span>
+                    ) : tab.id === 'views' && !hasCreatorPass ? (
+                      <Lock className="w-3 h-3 opacity-75" />
+                    ) : null}
                   </button>
                 );
               })}
@@ -519,6 +562,86 @@ export function UserProfileModal({
                     </div>
                   );
                 })
+              )}
+            </section>
+          )}
+
+          {activeTab === 'views' && isSelf && (
+            <section className="bg-white border border-[#E7E5E0] rounded-2xl overflow-hidden">
+              {!hasCreatorPass ? (
+                <div className="p-8 text-center space-y-3">
+                  <div className="w-11 h-11 rounded-2xl bg-[#ECFDF5] text-[#0E7C5B] flex items-center justify-center mx-auto">
+                    <Lock className="w-5 h-5" />
+                  </div>
+                  <h3 className="font-display text-base font-bold text-[#141413]">
+                    See Who Viewed Your Profile
+                  </h3>
+                  <p className="text-xs text-[#5E5D59] max-w-sm mx-auto">
+                    Subscribe to the $10/month Creator Pass via Paystack to unlock who visited your profile, post stories to enter prize rounds, and get a Verified badge.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenSubscribe();
+                    }}
+                    className="min-h-[42px] px-5 py-2 rounded-xl bg-[#0E7C5B] text-white text-xs font-semibold hover:bg-[#095E44] cursor-pointer"
+                  >
+                    Subscribe
+                  </button>
+                </div>
+              ) : profileViewers.length === 0 ? (
+                <div className="p-8 text-center space-y-2">
+                  <Eye className="w-6 h-6 text-[#0E7C5B] mx-auto" />
+                  <p className="text-sm text-[#5E5D59]">
+                    No one has visited your profile yet. Share a video story to get discovered!
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-[#F0EEE9]">
+                  {profileViewers.map((viewer) => {
+                    const viewerBadge = verifiedBadges[viewer.viewerId];
+                    const vInitials = (viewer.viewerName || 'M').slice(0, 2).toUpperCase();
+                    return (
+                      <div
+                        key={viewer.viewerId}
+                        className="p-4 flex items-center justify-between gap-3 hover:bg-[#FAF9F7] transition-colors"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => onSelectProfile(viewer.viewerId)}
+                          className="flex items-center gap-3 min-w-0 text-left group cursor-pointer"
+                        >
+                          {viewer.viewerAvatar ? (
+                            <img
+                              src={viewer.viewerAvatar}
+                              alt={viewer.viewerName}
+                              referrerPolicy="no-referrer"
+                              className="w-10 h-10 rounded-full object-cover border border-[#E7E5E0] shrink-0"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-[#141413] text-white text-xs font-semibold flex items-center justify-center shrink-0">
+                              {vInitials}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1">
+                              <span className="text-sm font-semibold text-[#141413] group-hover:text-[#0E7C5B] truncate">
+                                {viewer.viewerName}
+                              </span>
+                              {viewerBadge && (
+                                <BadgeCheck className="w-4 h-4 fill-[#0E7C5B] text-white shrink-0" />
+                              )}
+                            </div>
+                            <p className="text-xs text-[#5E5D59] truncate">
+                              {viewer.viewerLocation || 'Africa'} · Viewed {formatTimestamp(viewer.viewedAt)}
+                            </p>
+                          </div>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </section>
           )}

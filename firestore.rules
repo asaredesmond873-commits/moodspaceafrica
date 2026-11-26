@@ -44,6 +44,18 @@ service cloud.firestore {
         + (request.time.day() < 10 ? '0' + string(request.time.day()) : string(request.time.day()));
     }
 
+    function hasActiveCreatorPass(uid) {
+      return exists(/databases/$(database)/documents/creatorSubscriptions/$(uid + '__moodspace_pass'))
+        && get(/databases/$(database)/documents/creatorSubscriptions/$(uid + '__moodspace_pass')).data.status == 'active'
+        && get(/databases/$(database)/documents/creatorSubscriptions/$(uid + '__moodspace_pass')).data.expiresAt > request.time.toMillis();
+    }
+
+    function willHaveActiveCreatorPass(uid) {
+      return existsAfter(/databases/$(database)/documents/creatorSubscriptions/$(uid + '__moodspace_pass'))
+        && getAfter(/databases/$(database)/documents/creatorSubscriptions/$(uid + '__moodspace_pass')).data.status == 'active'
+        && getAfter(/databases/$(database)/documents/creatorSubscriptions/$(uid + '__moodspace_pass')).data.expiresAt > request.time.toMillis();
+    }
+
     // --- Validation Blueprints ---
 
     function isValidPublicProfile(data) {
@@ -366,30 +378,47 @@ service cloud.firestore {
         && data.createdAt is timestamp;
     }
 
+    function isValidProfileView(data) {
+      return data.keys().hasAll([
+          'profileUid', 'viewerId', 'viewerName', 'viewerAvatar', 'viewerLocation', 'viewedAt'
+        ])
+        && data.keys().hasOnly([
+          'profileUid', 'viewerId', 'viewerName', 'viewerAvatar', 'viewerLocation', 'viewedAt'
+        ])
+        && isValidId(data.profileUid)
+        && isValidId(data.viewerId)
+        && data.profileUid != data.viewerId
+        && data.viewerName is string && data.viewerName.size() >= 1 && data.viewerName.size() <= 80
+        && data.viewerAvatar is string && data.viewerAvatar.size() <= 150000
+        && data.viewerLocation is string && data.viewerLocation.size() <= 100
+        && data.viewedAt is timestamp;
+    }
+
     function isValidCreatorSubscription(data) {
       return data.keys().hasAll([
           'id', 'subscriberId', 'subscriberName', 'targetId', 'targetName',
-          'planType', 'amountGhs', 'provider', 'maskedPhone', 'status',
+          'planType', 'usdAmount', 'currency', 'localAmount', 'country',
+          'paymentProvider', 'paystackReference', 'status',
           'expiresAt', 'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
           'id', 'subscriberId', 'subscriberName', 'targetId', 'targetName',
-          'planType', 'amountGhs', 'provider', 'maskedPhone', 'status',
+          'planType', 'usdAmount', 'currency', 'localAmount', 'country',
+          'paymentProvider', 'paystackReference', 'status',
           'expiresAt', 'createdAt', 'updatedAt'
         ])
         && isValidId(data.id)
         && isValidId(data.subscriberId)
         && data.subscriberName is string && data.subscriberName.size() >= 1 && data.subscriberName.size() <= 80
-        && isValidId(data.targetId)
+        && isValidId(data.targetId) && data.targetId == 'moodspace_pass'
         && data.targetName is string && data.targetName.size() >= 1 && data.targetName.size() <= 80
-        && data.planType in ['creator_fan', 'creator_pro']
-        && data.amountGhs is int
-        && (
-          (data.planType == 'creator_fan' && data.amountGhs == 15)
-          || (data.planType == 'creator_pro' && data.amountGhs == 35)
-        )
-        && data.provider in ['MTN MoMo', 'M-Pesa', 'Airtel Money', 'Telecel Cash', 'AirtelTigo Money']
-        && data.maskedPhone is string && data.maskedPhone.size() >= 4 && data.maskedPhone.size() <= 20
+        && data.planType == 'creator_pass'
+        && data.usdAmount is int && data.usdAmount == 10
+        && data.currency in ['GHS', 'NGN', 'KES', 'ZAR', 'USD']
+        && data.localAmount is number && data.localAmount > 0
+        && data.country is string && data.country.size() >= 2 && data.country.size() <= 80
+        && data.paymentProvider == 'Paystack'
+        && data.paystackReference is string && data.paystackReference.size() >= 4 && data.paystackReference.size() <= 120
         && data.status in ['active', 'cancelled']
         && data.expiresAt is int && data.expiresAt > 0
         && data.createdAt is timestamp
@@ -422,6 +451,24 @@ service cloud.firestore {
             && incoming().diff(existing()).affectedKeys().hasOnly([
               'displayName', 'bio', 'location', 'accountType', 'avatarUrl', 'updatedAt'
             ])
+          )
+          || (
+            isOwner(userId)
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'badgeVerified', 'verifiedLabel', 'updatedAt'
+            ])
+            && (
+              (
+                incoming().badgeVerified == true
+                && incoming().verifiedLabel == 'Verified Creator'
+                && willHaveActiveCreatorPass(userId)
+              )
+              || (
+                incoming().badgeVerified == false
+                && incoming().verifiedLabel == ''
+                && !willHaveActiveCreatorPass(userId)
+              )
+            )
           )
           || (
             isAdmin()
@@ -478,6 +525,39 @@ service cloud.firestore {
           && isValidId(followingId)
           && isOwner(userId)
           && !existsAfter(/databases/$(database)/documents/publicProfiles/$(followingId)/followers/$(userId));
+      }
+
+      match /profileViews/{viewerId} {
+        allow get: if isSignedIn()
+          && isValidId(userId)
+          && isValidId(viewerId)
+          && isOwner(userId)
+          && hasActiveCreatorPass(userId);
+        allow list: if isSignedIn()
+          && isValidId(userId)
+          && isOwner(userId)
+          && existing().profileUid == userId
+          && hasActiveCreatorPass(userId);
+        allow create: if isVerified()
+          && isValidId(userId)
+          && isValidId(viewerId)
+          && isOwner(viewerId)
+          && viewerId != userId
+          && isValidProfileView(incoming())
+          && incoming().profileUid == userId
+          && incoming().viewerId == request.auth.uid
+          && incoming().viewedAt == request.time
+          && exists(/databases/$(database)/documents/publicProfiles/$(userId));
+        allow update: if isVerified()
+          && isValidId(userId)
+          && isValidId(viewerId)
+          && isOwner(viewerId)
+          && viewerId != userId
+          && isValidProfileView(incoming())
+          && incoming().profileUid == existing().profileUid
+          && incoming().viewerId == existing().viewerId
+          && incoming().viewedAt == request.time;
+        allow delete: if false;
       }
     }
 
@@ -758,6 +838,7 @@ service cloud.firestore {
 
       allow create: if isVerified()
         && isValidId(videoId)
+        && hasActiveCreatorPass(request.auth.uid)
         && isValidChallengeVideo(incoming())
         && incoming().id == videoId
         && incoming().authorId == request.auth.uid
@@ -826,23 +907,6 @@ service cloud.firestore {
             && !exists(/databases/$(database)/documents/challengeDailyVotes/$(request.auth.uid + '__' + utcDateKey()))
             && existsAfter(/databases/$(database)/documents/challengeDailyVotes/$(request.auth.uid + '__' + utcDateKey()))
             && getAfter(/databases/$(database)/documents/challengeDailyVotes/$(request.auth.uid + '__' + utcDateKey())).data.videoId == videoId
-          )
-          // Action 7: Gift increment (Rose 2, Fire 5, Lion 20)
-          || (
-            existing().isActive == true
-            && incoming().diff(existing()).affectedKeys().hasOnly(['giftsCount', 'giftsTotalGhs', 'updatedAt'])
-            && incoming().giftsCount == existing().giftsCount + 1
-            && (
-              incoming().giftsTotalGhs == existing().giftsTotalGhs + 2
-              || incoming().giftsTotalGhs == existing().giftsTotalGhs + 5
-              || incoming().giftsTotalGhs == existing().giftsTotalGhs + 20
-            )
-          )
-          // Action 8: 24-hour Boost activation
-          || (
-            existing().isActive == true
-            && incoming().diff(existing()).affectedKeys().hasOnly(['boostedUntil', 'updatedAt'])
-            && incoming().boostedUntil > 0
           )
         );
 
@@ -954,16 +1018,18 @@ service cloud.firestore {
     match /creatorSubscriptions/{subId} {
       allow get: if isSignedIn()
         && isValidId(subId)
-        && (existing().subscriberId == request.auth.uid || existing().targetId == request.auth.uid || isAdmin());
+        && (existing().subscriberId == request.auth.uid || isAdmin());
       allow list: if isSignedIn()
-        && (existing().subscriberId == request.auth.uid || existing().targetId == request.auth.uid || isAdmin());
+        && (existing().subscriberId == request.auth.uid || isAdmin());
       allow create: if isVerified()
         && isValidId(subId)
         && isValidCreatorSubscription(incoming())
         && incoming().id == subId
         && incoming().subscriberId == request.auth.uid
-        && subId == request.auth.uid + '__' + incoming().targetId
+        && subId == request.auth.uid + '__moodspace_pass'
+        && incoming().targetId == 'moodspace_pass'
         && incoming().status == 'active'
+        && incoming().expiresAt > request.time.toMillis()
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
       allow update: if isVerified()
@@ -974,11 +1040,12 @@ service cloud.firestore {
         && incoming().subscriberId == existing().subscriberId
         && incoming().targetId == existing().targetId
         && incoming().planType == existing().planType
-        && incoming().amountGhs == existing().amountGhs
+        && incoming().usdAmount == existing().usdAmount
+        && incoming().paymentProvider == existing().paymentProvider
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly([
-          'status', 'provider', 'maskedPhone', 'expiresAt', 'updatedAt'
+          'status', 'currency', 'localAmount', 'country', 'paystackReference', 'expiresAt', 'updatedAt'
         ]);
       allow delete: if isVerified()
         && isValidId(subId)

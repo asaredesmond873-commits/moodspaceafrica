@@ -195,15 +195,45 @@ export const AFRICAN_REGIONS: AfricanRegion[] = [
   'Central Africa',
 ];
 
-export type GiftType = 'rose' | 'fire' | 'lion';
-export type MoMoProvider =
-  | 'MTN MoMo'
-  | 'M-Pesa'
-  | 'Airtel Money'
-  | 'Telecel Cash'
-  | 'AirtelTigo Money';
+export type PaystackCurrency = 'GHS' | 'NGN' | 'KES' | 'ZAR' | 'USD';
 
-export type SubscriptionPlanType = 'creator_fan' | 'creator_pro';
+export interface AfricanCountryOption {
+  country: string;
+  currency: PaystackCurrency;
+  symbol: string;
+}
+
+export const AFRICAN_PAYSTACK_COUNTRIES: readonly AfricanCountryOption[] = [
+  { country: 'Ghana', currency: 'GHS', symbol: 'GH₵' },
+  { country: 'Nigeria', currency: 'NGN', symbol: '₦' },
+  { country: 'Kenya', currency: 'KES', symbol: 'KSh' },
+  { country: 'South Africa', currency: 'ZAR', symbol: 'R' },
+  { country: 'Rwanda', currency: 'USD', symbol: '$' },
+  { country: 'Uganda', currency: 'USD', symbol: '$' },
+  { country: 'Tanzania', currency: 'USD', symbol: '$' },
+  { country: 'Senegal', currency: 'USD', symbol: '$' },
+  { country: 'Côte d’Ivoire', currency: 'USD', symbol: '$' },
+  { country: 'Cameroon', currency: 'USD', symbol: '$' },
+  { country: 'Ethiopia', currency: 'USD', symbol: '$' },
+  { country: 'Egypt', currency: 'USD', symbol: '$' },
+  { country: 'Morocco', currency: 'USD', symbol: '$' },
+  { country: 'Zambia', currency: 'USD', symbol: '$' },
+  { country: 'Zimbabwe', currency: 'USD', symbol: '$' },
+  { country: 'Botswana', currency: 'USD', symbol: '$' },
+  { country: 'Namibia', currency: 'USD', symbol: '$' },
+  { country: 'DR Congo', currency: 'USD', symbol: '$' },
+  { country: 'Other African Country', currency: 'USD', symbol: '$' },
+] as const;
+
+export const CURRENCY_SYMBOLS: Record<PaystackCurrency, string> = {
+  GHS: 'GH₵',
+  NGN: '₦',
+  KES: 'KSh',
+  ZAR: 'R',
+  USD: '$',
+};
+
+export type SubscriptionPlanType = 'creator_pass';
 
 export interface CreatorSubscription {
   id: string;
@@ -212,22 +242,33 @@ export interface CreatorSubscription {
   targetId: string;
   targetName: string;
   planType: SubscriptionPlanType;
-  amountGhs: number;
-  provider: MoMoProvider;
-  maskedPhone: string;
+  usdAmount: number;
+  currency: PaystackCurrency;
+  localAmount: number;
+  country: string;
+  paymentProvider: 'Paystack';
+  paystackReference: string;
   status: 'active' | 'cancelled';
   expiresAt: number;
   createdAt: Timestamp | null;
   updatedAt: Timestamp | null;
 }
 
+export interface ProfileViewRecord {
+  profileUid: string;
+  viewerId: string;
+  viewerName: string;
+  viewerAvatar: string;
+  viewerLocation: string;
+  viewedAt: Timestamp | null;
+}
+
 export const SUBSCRIPTION_PLANS = {
-  CREATOR_FAN_GHS: 15,
-  CREATOR_PRO_GHS: 35,
+  PLAN_ID: 'moodspace_pass',
+  PLAN_NAME: 'MoodSpace Creator Pass',
+  USD_MONTHLY: 10,
   DURATION_DAYS: 30,
   DURATION_MS: 30 * 24 * 60 * 60 * 1000,
-  PRO_TARGET_ID: 'moodspace_pro',
-  PRO_TARGET_NAME: 'MoodSpace Creator Pro',
 } as const;
 
 export interface ChallengeVideo {
@@ -268,27 +309,6 @@ export interface ChallengeVideoComment {
   createdAt: Timestamp | null;
 }
 
-export interface ChallengeVideoGift {
-  id: string;
-  videoId: string;
-  senderId: string;
-  senderName: string;
-  giftType: GiftType;
-  amountGhs: number;
-  createdAt: Timestamp | null;
-}
-
-export interface ChallengeVideoBoost {
-  id: string;
-  videoId: string;
-  payerId: string;
-  provider: MoMoProvider;
-  maskedPhone: string;
-  amountGhs: number;
-  boostedUntil: number;
-  createdAt: Timestamp | null;
-}
-
 export interface ChallengeDailyVote {
   userId: string;
   dateKey: string;
@@ -322,11 +342,4 @@ export const CHALLENGE_LIMITS = {
   COMMENT_MAX: 500,
   THUMBNAIL_MAX: 195000,
   PRIZE_GHS: 300,
-  BOOST_COST_GHS: 20,
-  BOOST_DURATION_MS: 24 * 60 * 60 * 1000,
-  GIFT_PRICES: {
-    rose: 2,
-    fire: 5,
-    lion: 20,
-  },
 } as const;

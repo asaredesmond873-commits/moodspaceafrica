@@ -139,12 +139,45 @@ export function getAfricanRegionFromLocation(location: string): Exclude<AfricanR
   return 'West Africa';
 }
 
-export function computeCreatorSupportScore(video: ChallengeVideo, nowMs = Date.now()): number {
-  const boostBonus = video.boostedUntil > nowMs ? 60 : video.boostedUntil > 0 ? 20 : 0;
+export function detectPaystackCountryFromLocation(location: string): string {
+  const loc = (location || '').toLowerCase();
+  if (loc.includes('ghana') || loc.includes('accra') || loc.includes('kumasi')) return 'Ghana';
+  if (loc.includes('nigeria') || loc.includes('lagos') || loc.includes('abuja')) return 'Nigeria';
+  if (loc.includes('kenya') || loc.includes('nairobi') || loc.includes('mombasa')) return 'Kenya';
+  if (
+    loc.includes('south africa') ||
+    loc.includes('johannesburg') ||
+    loc.includes('cape town')
+  ) {
+    return 'South Africa';
+  }
+  if (loc.includes('rwanda') || loc.includes('kigali')) return 'Rwanda';
+  if (loc.includes('uganda') || loc.includes('kampala')) return 'Uganda';
+  if (loc.includes('tanzania') || loc.includes('dar es salaam')) return 'Tanzania';
+  if (loc.includes('senegal') || loc.includes('dakar')) return 'Senegal';
+  if (loc.includes('ivoire') || loc.includes('abidjan')) return 'Côte d’Ivoire';
+  if (loc.includes('cameroon') || loc.includes('douala')) return 'Cameroon';
+  if (loc.includes('ethiopia') || loc.includes('addis')) return 'Ethiopia';
+  if (loc.includes('egypt') || loc.includes('cairo')) return 'Egypt';
+  if (loc.includes('morocco') || loc.includes('casablanca')) return 'Morocco';
+  if (loc.includes('zambia') || loc.includes('lusaka')) return 'Zambia';
+  if (loc.includes('zimbabwe') || loc.includes('harare')) return 'Zimbabwe';
+  if (loc.includes('botswana') || loc.includes('gaborone')) return 'Botswana';
+  if (loc.includes('namibia') || loc.includes('windhoek')) return 'Namibia';
+  if (loc.includes('congo') || loc.includes('kinshasa')) return 'DR Congo';
+  return 'Ghana';
+}
+
+export function formatLocalCurrencyPrice(amount: number, symbol: string, currency: string): string {
+  if (currency === 'NGN' || currency === 'KES') {
+    return `${symbol}${Math.round(amount).toLocaleString('en-US')}`;
+  }
+  return `${symbol}${amount.toFixed(2)}`;
+}
+
+export function computeCreatorSupportScore(video: ChallengeVideo): number {
   return (
     video.votesCount * 10 +
-    video.giftsTotalGhs * 5 +
-    boostBonus +
     video.likesCount * 3 +
     video.commentsCount * 4 +
     video.sharesCount * 5 +

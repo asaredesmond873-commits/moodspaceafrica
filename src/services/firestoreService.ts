@@ -25,6 +25,7 @@ import {
   type PostCategory,
   type PostComment,
   type PostVisibility,
+  type ProfileViewRecord,
   type PublicProfile,
   SCHEMA_LIMITS,
   type VerificationCategory,
@@ -293,6 +294,52 @@ export function subscribeProfileFollowing(
       const rows = snap.docs
         .map((d) => d.data() as FollowRecord)
         .sort((a, b) => (b.createdAt?.toMillis() ?? Date.now()) - (a.createdAt?.toMillis() ?? Date.now()));
+      onData(rows);
+    },
+      (error) => {
+        try {
+          handleFirestoreError(error, OperationType.LIST, path);
+        } catch (wrapped) {
+          if (onError && wrapped instanceof Error) {
+            onError(wrapped);
+          }
+        }
+      }
+    );
+}
+
+export async function recordProfileView(
+  targetUid: string,
+  viewer: PublicProfile
+): Promise<void> {
+  if (!targetUid || !viewer.uid || targetUid === viewer.uid) return;
+  try {
+    await setDoc(doc(db, 'publicProfiles', targetUid, 'profileViews', viewer.uid), {
+      profileUid: targetUid,
+      viewerId: viewer.uid,
+      viewerName: clampString(viewer.displayName, SCHEMA_LIMITS.DISPLAY_NAME_MAX) || 'Member',
+      viewerAvatar: clampString(viewer.avatarUrl, SCHEMA_LIMITS.AVATAR_URL_MAX),
+      viewerLocation: clampString(viewer.location || 'Africa', SCHEMA_LIMITS.LOCATION_MAX),
+      viewedAt: serverTimestamp(),
+    });
+  } catch {
+    // Silent background view record
+  }
+}
+
+export function subscribeMyProfileViewers(
+  uid: string,
+  onData: (views: ProfileViewRecord[]) => void,
+  onError?: (err: Error) => void
+) {
+  const path = `publicProfiles/${uid}/profileViews`;
+  const q = query(collection(db, 'publicProfiles', uid, 'profileViews'), where('profileUid', '==', uid));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const rows = snap.docs
+        .map((d) => d.data() as ProfileViewRecord)
+        .sort((a, b) => (b.viewedAt?.toMillis() ?? Date.now()) - (a.viewedAt?.toMillis() ?? Date.now()));
       onData(rows);
     },
     (error) => {

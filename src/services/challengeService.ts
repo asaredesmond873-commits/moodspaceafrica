@@ -21,12 +21,10 @@ import {
   type ChallengeVideo,
   type ChallengeVideoComment,
   type CreatorSubscription,
-  type GiftType,
-  type MoMoProvider,
+  type PaystackCurrency,
   type PublicProfile,
   SCHEMA_LIMITS,
   SUBSCRIPTION_PLANS,
-  type SubscriptionPlanType,
 } from '../types';
 import {
   cacheUploadedVideoBlob,
@@ -52,12 +50,6 @@ const DEFAULT_CONFIG: ChallengeConfig = {
 
 function clamp(str: string, max: number): string {
   return (str || '').trim().slice(0, max);
-}
-
-function maskMobileNumber(rawPhone: string): string {
-  const cleaned = rawPhone.replace(/\s+/g, '').trim();
-  if (cleaned.length <= 4) return cleaned;
-  return `${cleaned.slice(0, 3)}****${cleaned.slice(-3)}`;
 }
 
 export function subscribeChallengeConfig(
@@ -119,14 +111,7 @@ export function subscribeChallengeVideos(
         .map((d) => d.data() as ChallengeVideo)
         .filter((v) => v.roundId === roundId && v.videoReady === true);
 
-      const now = Date.now();
       list.sort((a, b) => {
-        const aBoosted = a.boostedUntil > now ? 1 : 0;
-        const bBoosted = b.boostedUntil > now ? 1 : 0;
-        if (aBoosted !== bBoosted) return bBoosted - aBoosted;
-        if (aBoosted && bBoosted && a.boostedUntil !== b.boostedUntil) {
-          return b.boostedUntil - a.boostedUntil;
-        }
         const aTime = a.createdAt ? a.createdAt.toMillis() : 0;
         const bTime = b.createdAt ? b.createdAt.toMillis() : 0;
         return bTime - aTime;
@@ -500,69 +485,6 @@ export async function castDailyVote(
   }
 }
 
-export async function sendChallengeGift(
-  videoId: string,
-  sender: PublicProfile,
-  giftType: GiftType
-): Promise<number> {
-  const amountGhs = CHALLENGE_LIMITS.GIFT_PRICES[giftType];
-  const giftId = generateSafeId('gift');
-  const path = `challengeVideos/${videoId}/gifts/${giftId}`;
-  try {
-    const batch = writeBatch(db);
-    batch.set(doc(db, 'challengeVideos', videoId, 'gifts', giftId), {
-      id: giftId,
-      videoId,
-      senderId: sender.uid,
-      senderName: clamp(sender.displayName, SCHEMA_LIMITS.DISPLAY_NAME_MAX) || 'Supporter',
-      giftType,
-      amountGhs,
-      createdAt: serverTimestamp(),
-    });
-    batch.update(doc(db, 'challengeVideos', videoId), {
-      giftsCount: increment(1),
-      giftsTotalGhs: increment(amountGhs),
-      updatedAt: serverTimestamp(),
-    });
-    await batch.commit();
-    return amountGhs;
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, path);
-  }
-}
-
-export async function activateChallengeBoost(
-  videoId: string,
-  payerId: string,
-  provider: MoMoProvider,
-  rawPhone: string
-): Promise<number> {
-  const boostId = generateSafeId('boost');
-  const path = `challengeVideos/${videoId}/boosts/${boostId}`;
-  const boostedUntil = Date.now() + CHALLENGE_LIMITS.BOOST_DURATION_MS;
-  try {
-    const batch = writeBatch(db);
-    batch.set(doc(db, 'challengeVideos', videoId, 'boosts', boostId), {
-      id: boostId,
-      videoId,
-      payerId,
-      provider,
-      maskedPhone: maskMobileNumber(rawPhone),
-      amountGhs: CHALLENGE_LIMITS.BOOST_COST_GHS,
-      boostedUntil,
-      createdAt: serverTimestamp(),
-    });
-    batch.update(doc(db, 'challengeVideos', videoId), {
-      boostedUntil,
-      updatedAt: serverTimestamp(),
-    });
-    await batch.commit();
-    return boostedUntil;
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, path);
-  }
-}
-
 // --- Saved Videos (Bookmarks) ---
 
 export function subscribeSavedVideoIds(
@@ -608,7 +530,7 @@ export async function toggleSavedVideo(
   }
 }
 
-// --- Creator & Pro Subscriptions ---
+// --- Single $10/month Paystack Creator Pass Subscription ---
 
 export function subscribeMySubscriptions(
   uid: string,
@@ -622,6 +544,7 @@ export function subscribeMySubscriptions(
     (snap) => {
       const list = snap.docs
         .map((d) => d.data() as CreatorSubscription)
+        .filter((s) => s.planType === 'creator_pass')
         .sort((a, b) => (b.updatedAt?.toMillis() ?? 0) - (a.updatedAt?.toMillis() ?? 0));
       onUpdate(list);
     },
@@ -632,76 +555,63 @@ export function subscribeMySubscriptions(
   );
 }
 
-export function subscribeCreatorSubscribers(
-  creatorUid: string,
-  onUpdate: (subs: CreatorSubscription[]) => void,
-  onError?: (err: unknown) => void
-): () => void {
-  const path = 'creatorSubscriptions';
-  const q = query(collection(db, path), where('targetId', '==', creatorUid));
-  return onSnapshot(
-    q,
-    (snap) => {
-      const now = Date.now();
-      const list = snap.docs
-        .map((d) => d.data() as CreatorSubscription)
-        .filter((s) => s.status === 'active' && s.expiresAt > now)
-        .sort((a, b) => (b.updatedAt?.toMillis() ?? 0) - (a.updatedAt?.toMillis() ?? 0));
-      onUpdate(list);
-    },
-    (err) => {
-      if (onError) onError(err);
-      else handleFirestoreError(err, OperationType.LIST, path);
-    }
-  );
-}
-
-export async function upsertCreatorSubscription(input: {
+export async function activateCreatorPassSubscription(input: {
   subscriber: PublicProfile;
-  targetId: string;
-  targetName: string;
-  planType: SubscriptionPlanType;
-  provider: MoMoProvider;
-  rawPhone: string;
+  country: string;
+  currency: PaystackCurrency;
+  localAmount: number;
+  paystackReference: string;
 }): Promise<CreatorSubscription> {
-  const subId = `${input.subscriber.uid}__${input.targetId}`;
+  const subId = `${input.subscriber.uid}__${SUBSCRIPTION_PLANS.PLAN_ID}`;
   const path = `creatorSubscriptions/${subId}`;
-  const amountGhs =
-    input.planType === 'creator_pro'
-      ? SUBSCRIPTION_PLANS.CREATOR_PRO_GHS
-      : SUBSCRIPTION_PLANS.CREATOR_FAN_GHS;
   const expiresAt = Date.now() + SUBSCRIPTION_PLANS.DURATION_MS;
-  const maskedPhone = maskMobileNumber(input.rawPhone);
+  const cleanCountry = clamp(input.country, 80) || 'Africa';
+  const cleanReference = clamp(input.paystackReference, 120) || `msp_${Date.now()}`;
 
   try {
     const ref = doc(db, 'creatorSubscriptions', subId);
+    const profileRef = doc(db, 'publicProfiles', input.subscriber.uid);
     const existing = await getDoc(ref);
+    const batch = writeBatch(db);
 
     if (existing.exists()) {
-      await updateDoc(ref, {
+      batch.update(ref, {
         status: 'active',
-        provider: input.provider,
-        maskedPhone,
+        currency: input.currency,
+        localAmount: input.localAmount,
+        country: cleanCountry,
+        paystackReference: cleanReference,
         expiresAt,
         updatedAt: serverTimestamp(),
       });
     } else {
-      await setDoc(ref, {
+      batch.set(ref, {
         id: subId,
         subscriberId: input.subscriber.uid,
         subscriberName: clamp(input.subscriber.displayName, 80) || 'Member',
-        targetId: clamp(input.targetId, 128),
-        targetName: clamp(input.targetName, 80) || 'Storyteller',
-        planType: input.planType,
-        amountGhs,
-        provider: input.provider,
-        maskedPhone,
+        targetId: SUBSCRIPTION_PLANS.PLAN_ID,
+        targetName: SUBSCRIPTION_PLANS.PLAN_NAME,
+        planType: 'creator_pass',
+        usdAmount: SUBSCRIPTION_PLANS.USD_MONTHLY,
+        currency: input.currency,
+        localAmount: input.localAmount,
+        country: cleanCountry,
+        paymentProvider: 'Paystack',
+        paystackReference: cleanReference,
         status: 'active',
         expiresAt,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
     }
+
+    batch.update(profileRef, {
+      badgeVerified: true,
+      verifiedLabel: 'Verified Creator',
+      updatedAt: serverTimestamp(),
+    });
+
+    await batch.commit();
 
     const updated = await getDoc(ref);
     return updated.data() as CreatorSubscription;
@@ -710,13 +620,26 @@ export async function upsertCreatorSubscription(input: {
   }
 }
 
-export async function cancelCreatorSubscription(subId: string): Promise<void> {
+export async function cancelCreatorSubscription(
+  subId: string,
+  uid: string,
+  clearPaidBadge = true
+): Promise<void> {
   const path = `creatorSubscriptions/${subId}`;
   try {
-    await updateDoc(doc(db, 'creatorSubscriptions', subId), {
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'creatorSubscriptions', subId), {
       status: 'cancelled',
       updatedAt: serverTimestamp(),
     });
+    if (clearPaidBadge) {
+      batch.update(doc(db, 'publicProfiles', uid), {
+        badgeVerified: false,
+        verifiedLabel: '',
+        updatedAt: serverTimestamp(),
+      });
+    }
+    await batch.commit();
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, path);
   }

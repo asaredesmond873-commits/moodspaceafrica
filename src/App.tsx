@@ -1,19 +1,21 @@
 import { Component, lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { MoMoCheckoutModal, type CheckoutTarget } from './components/MoMoCheckoutModal';
+import type { DashboardTab } from './components/DashboardView';
+import { PaystackCheckoutModal } from './components/PaystackCheckoutModal';
 import { TopBar, type NavSection } from './components/TopBar';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import {
-  activateChallengeBoost,
+  activateCreatorPassSubscription,
   cancelCreatorSubscription,
   subscribeAllChallengeVideos,
   subscribeChallengeVideos,
   subscribeMySubscriptions,
   subscribeSavedVideoIds,
   toggleSavedVideo,
-  upsertCreatorSubscription,
 } from './services/challengeService';
 import {
   subscribeMyFollowingIds,
+  subscribeMyProfileViewers,
+  subscribeProfileFollowers,
   subscribeVerifiedProfiles,
   toggleFollowUser,
   type FollowTargetSummary,
@@ -22,16 +24,19 @@ import {
   SUBSCRIPTION_PLANS,
   type ChallengeVideo,
   type CreatorSubscription,
-  type MoMoProvider,
+  type FollowRecord,
+  type PaystackCurrency,
+  type ProfileViewRecord,
   type VerifiedBadgeInfo,
 } from './types';
 import { getCurrentChallengeRound } from './utils/challengeMedia';
+import { getNotifLastReadMs, markAllNotificationsReadNow } from './utils/notifications';
 
 const VideosArenaView = lazy(() =>
   import('./components/VideosArenaView').then((m) => ({ default: m.VideosArenaView }))
 );
-const SubscriptionsView = lazy(() =>
-  import('./components/SubscriptionsView').then((m) => ({ default: m.SubscriptionsView }))
+const NotificationsView = lazy(() =>
+  import('./components/NotificationsView').then((m) => ({ default: m.NotificationsView }))
 );
 const DashboardView = lazy(() =>
   import('./components/DashboardView').then((m) => ({ default: m.DashboardView }))
@@ -80,8 +85,8 @@ class AppErrorBoundary extends Component<
 }
 
 function MoodSpaceShell() {
-  const { user, profile, signInWithGoogle, authError } = useAuth();
-  const [activeSection, setActiveSection] = useState<NavSection>('stories');
+  const { user, profile, signInWithGoogle, authError, setLocalProfile } = useAuth();
+  const [activeSection, setActiveSection] = useState<NavSection>('home');
   const round = useMemo(() => getCurrentChallengeRound(), []);
 
   const [roundVideos, setRoundVideos] = useState<ChallengeVideo[]>([]);
@@ -89,13 +94,18 @@ function MoodSpaceShell() {
   const [videosLoading, setVideosLoading] = useState(true);
   const [verifiedBadges, setVerifiedBadges] = useState<Record<string, VerifiedBadgeInfo>>({});
   const [followingIds, setFollowingIds] = useState<Set<string>>(() => new Set());
+  const [myFollowers, setMyFollowers] = useState<FollowRecord[]>([]);
   const [savedVideoIds, setSavedVideoIds] = useState<Set<string>>(() => new Set());
   const [mySubscriptions, setMySubscriptions] = useState<CreatorSubscription[]>([]);
+  const [profileViewers, setProfileViewers] = useState<ProfileViewRecord[]>([]);
+  const [notifLastReadMs, setNotifLastReadMs] = useState<number>(() => getNotifLastReadMs());
 
   const [viewingProfileUid, setViewingProfileUid] = useState<string | null>(null);
-  const [checkoutTarget, setCheckoutTarget] = useState<CheckoutTarget | null>(null);
+  const [subscribeModalOpen, setSubscribeModalOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [videoUploadNonce, setVideoUploadNonce] = useState(0);
+  const [dashboardInitialTab, setDashboardInitialTab] = useState<DashboardTab>('overview');
+  const [dashboardTabNonce, setDashboardTabNonce] = useState(0);
 
   useEffect(() => {
     const unsubRound = subscribeChallengeVideos(
@@ -120,38 +130,69 @@ function MoodSpaceShell() {
   useEffect(() => {
     if (!user) {
       setFollowingIds(new Set());
+      setMyFollowers([]);
       setSavedVideoIds(new Set());
       setMySubscriptions([]);
       return;
     }
     const unsubFollowing = subscribeMyFollowingIds(user.uid, setFollowingIds, () => {});
+    const unsubFollowers = subscribeProfileFollowers(user.uid, setMyFollowers, () => {});
     const unsubSaved = subscribeSavedVideoIds(user.uid, setSavedVideoIds, () => {});
     const unsubSubs = subscribeMySubscriptions(user.uid, setMySubscriptions, () => {});
     return () => {
       unsubFollowing();
+      unsubFollowers();
       unsubSaved();
       unsubSubs();
     };
   }, [user]);
 
   const now = Date.now();
-  const activeSubs = useMemo(
-    () => mySubscriptions.filter((s) => s.status === 'active' && s.expiresAt > now),
+  const activeCreatorPass = useMemo(
+    () =>
+      mySubscriptions.find(
+        (s) =>
+          s.planType === 'creator_pass' &&
+          s.targetId === SUBSCRIPTION_PLANS.PLAN_ID &&
+          s.status === 'active' &&
+          s.expiresAt > now
+      ) ?? null,
     [mySubscriptions, now]
   );
 
-  const hasProSubscription = useMemo(
-    () =>
-      activeSubs.some(
-        (s) => s.planType === 'creator_pro' && s.targetId === SUBSCRIPTION_PLANS.PRO_TARGET_ID
-      ),
-    [activeSubs]
-  );
+  const hasCreatorPass = Boolean(activeCreatorPass);
 
-  const subscribedTargetIds = useMemo(
-    () => new Set(activeSubs.filter((s) => s.planType === 'creator_fan').map((s) => s.targetId)),
-    [activeSubs]
-  );
+  useEffect(() => {
+    if (!user || !hasCreatorPass) {
+      setProfileViewers([]);
+      return;
+    }
+    const unsubViews = subscribeMyProfileViewers(
+      user.uid,
+      setProfileViewers,
+      () => setProfileViewers([])
+    );
+    return () => unsubViews();
+  }, [user, hasCreatorPass]);
+
+  const unreadNotificationsCount = useMemo(() => {
+    if (!user) return 0;
+    let count = 0;
+    myFollowers.forEach((f) => {
+      if ((f.createdAt?.toMillis() ?? 0) > notifLastReadMs) count += 1;
+    });
+    if (hasCreatorPass) {
+      profileViewers.forEach((pv) => {
+        if ((pv.viewedAt?.toMillis() ?? 0) > notifLastReadMs) count += 1;
+      });
+    }
+    allVideos.forEach((v) => {
+      if (followingIds.has(v.authorId) && (v.createdAt?.toMillis() ?? 0) > notifLastReadMs) {
+        count += 1;
+      }
+    });
+    return count;
+  }, [user, myFollowers, hasCreatorPass, profileViewers, allVideos, followingIds, notifLastReadMs]);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -223,65 +264,58 @@ function MoodSpaceShell() {
     }
   };
 
-  const handleOpenBoost = async (video: ChallengeVideo) => {
+  const handleOpenSubscribe = async () => {
     if (!user) {
       const signed = await signInWithGoogle();
       if (!signed) return;
     }
-    setCheckoutTarget({ mode: 'boost', video });
+    setSubscribeModalOpen(true);
   };
 
-  const handleStartSubscription = async (input: {
-    planType: 'creator_fan' | 'creator_pro';
-    targetId: string;
-    targetName: string;
-    targetSubtitle?: string;
+  const handleConfirmPaystackSubscribe = async (input: {
+    country: string;
+    currency: PaystackCurrency;
+    localAmount: number;
+    paystackReference: string;
   }) => {
-    if (!user) {
-      const signed = await signInWithGoogle();
-      if (!signed) return;
-    }
-    setCheckoutTarget({
-      mode: 'subscription',
-      ...input,
-    });
-  };
-
-  const handleConfirmCheckout = async (provider: MoMoProvider, phone: string) => {
-    if (!checkoutTarget) return;
     let activeProfile = profile;
     if (!user || !activeProfile) {
       activeProfile = await signInWithGoogle();
       if (!activeProfile) throw new Error('Please sign in first.');
     }
 
-    if (checkoutTarget.mode === 'boost') {
-      await activateChallengeBoost(checkoutTarget.video.id, activeProfile.uid, provider, phone);
-      showToast(`Boosted "${checkoutTarget.video.title}" for 24 hours via ${provider}!`);
-    } else {
-      await upsertCreatorSubscription({
-        subscriber: activeProfile,
-        targetId: checkoutTarget.targetId,
-        targetName: checkoutTarget.targetName,
-        planType: checkoutTarget.planType,
-        provider,
-        rawPhone: phone,
-      });
-      showToast(`Subscribed to ${checkoutTarget.targetName} via ${provider}!`);
-    }
+    await activateCreatorPassSubscription({
+      subscriber: activeProfile,
+      ...input,
+    });
+    setLocalProfile({
+      ...activeProfile,
+      badgeVerified: true,
+      verifiedLabel: 'Verified Creator',
+    });
+    showToast('MoodSpace Creator Pass active! You can now post stories and enter to win.');
   };
 
-  const handleCancelSubscription = async (subId: string) => {
+  const handleCancelCreatorPass = async () => {
+    if (!activeCreatorPass || !user) return;
+    const clearPaidBadge = profile?.verifiedLabel === 'Verified Creator';
     try {
-      await cancelCreatorSubscription(subId);
-      showToast('Subscription cancelled.');
+      await cancelCreatorSubscription(activeCreatorPass.id, user.uid, clearPaidBadge);
+      if (profile && clearPaidBadge) {
+        setLocalProfile({
+          ...profile,
+          badgeVerified: false,
+          verifiedLabel: '',
+        });
+      }
+      showToast('Creator Pass membership cancelled.');
     } catch {
-      showToast('Could not cancel subscription.');
+      showToast('Could not cancel Creator Pass membership.');
     }
   };
 
   const handleJumpToStory = (videoId: string) => {
-    setActiveSection('stories');
+    setActiveSection('home');
     window.setTimeout(() => {
       const el = document.getElementById(`video-reel-${videoId}`);
       if (el) {
@@ -291,21 +325,43 @@ function MoodSpaceShell() {
   };
 
   const handleRequestUpload = () => {
-    if (activeSection !== 'stories') {
-      setActiveSection('stories');
+    if (activeSection !== 'home') {
+      setActiveSection('home');
     }
     setVideoUploadNonce((n) => n + 1);
+  };
+
+  const handleOpenDashboardLeaderboard = () => {
+    setDashboardInitialTab('leaderboard');
+    setDashboardTabNonce((n) => n + 1);
+    setActiveSection('dashboard');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleOpenMyProfile = async () => {
+    if (!user) {
+      const signed = await signInWithGoogle();
+      if (!signed) return;
+      setViewingProfileUid(signed.uid);
+      return;
+    }
+    setViewingProfileUid(user.uid);
   };
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF9F7] text-[#141413]">
       <TopBar
         activeSection={activeSection}
+        unreadNotificationsCount={unreadNotificationsCount}
         onSelectSection={(sec) => {
           setActiveSection(sec);
+          if (sec === 'dashboard') {
+            setDashboardInitialTab('overview');
+          }
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
         onOpenVideoUpload={handleRequestUpload}
+        onOpenMyProfile={() => void handleOpenMyProfile()}
       />
 
       {authError && (
@@ -317,21 +373,21 @@ function MoodSpaceShell() {
       )}
 
       <div className="flex-1">
-        {activeSection === 'subscriptions' ? (
+        {activeSection === 'notifications' ? (
           <Suspense
             fallback={
-              <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12 text-sm text-[#5E5D59]">
-                Loading Subscriptions...
+              <div className="max-w-2xl mx-auto px-4 sm:px-6 py-12 text-sm text-[#5E5D59]">
+                Loading Notifications...
               </div>
             }
           >
-            <SubscriptionsView
+            <NotificationsView
               allVideos={allVideos}
-              mySubscriptions={mySubscriptions}
-              verifiedBadges={verifiedBadges}
-              onStartSubscription={(input) => void handleStartSubscription(input)}
-              onCancelSubscription={handleCancelSubscription}
+              followingIds={followingIds}
+              hasCreatorPass={hasCreatorPass}
+              onJumpToStory={handleJumpToStory}
               onViewProfile={(uid) => setViewingProfileUid(uid)}
+              onMarkRead={() => setNotifLastReadMs(markAllNotificationsReadNow())}
             />
           </Suspense>
         ) : activeSection === 'dashboard' ? (
@@ -346,22 +402,16 @@ function MoodSpaceShell() {
               allVideos={allVideos}
               roundVideos={roundVideos}
               savedVideoIds={savedVideoIds}
-              mySubscriptions={mySubscriptions}
-              hasProSubscription={hasProSubscription}
+              activePass={activeCreatorPass}
+              hasCreatorPass={hasCreatorPass}
+              profileViewers={profileViewers}
               followingCount={followingIds.size}
+              initialTab={dashboardInitialTab}
+              tabNonce={dashboardTabNonce}
               onUploadStory={handleRequestUpload}
-              onBoostVideo={(video) => void handleOpenBoost(video)}
               onToggleSaved={(videoId) => void handleToggleSavedVideo(videoId)}
-              onOpenSubscriptionsPage={() => setActiveSection('subscriptions')}
-              onUpgradePro={() =>
-                void handleStartSubscription({
-                  planType: 'creator_pro',
-                  targetId: SUBSCRIPTION_PLANS.PRO_TARGET_ID,
-                  targetName: SUBSCRIPTION_PLANS.PRO_TARGET_NAME,
-                  targetSubtitle: 'Pro Storyteller badge · Priority African discovery · Analytics',
-                })
-              }
-              onCancelSubscription={handleCancelSubscription}
+              onOpenSubscribe={() => void handleOpenSubscribe()}
+              onCancelPass={handleCancelCreatorPass}
               onJumpToStory={handleJumpToStory}
               onViewProfile={(uid) => setViewingProfileUid(uid)}
               onNotify={showToast}
@@ -379,24 +429,15 @@ function MoodSpaceShell() {
               roundVideos={roundVideos}
               allVideos={allVideos}
               videosLoading={videosLoading}
-              initialViewMode={activeSection === 'leaderboard' ? 'leaderboard' : 'stories'}
+              mode={activeSection === 'following' ? 'following' : 'home'}
               verifiedBadges={verifiedBadges}
               followingIds={followingIds}
-              subscribedTargetIds={subscribedTargetIds}
-              hasProSubscription={hasProSubscription}
+              hasCreatorPass={hasCreatorPass}
               savedVideoIds={savedVideoIds}
               onToggleFollow={(target) => void handleToggleFollow(target)}
               onToggleSaved={(videoId) => void handleToggleSavedVideo(videoId)}
-              onOpenBoost={(video) => void handleOpenBoost(video)}
-              onSubscribeCreator={(creatorId, creatorName, location) =>
-                void handleStartSubscription({
-                  planType: 'creator_fan',
-                  targetId: creatorId,
-                  targetName: creatorName,
-                  targetSubtitle: `${location} · Monthly Fan Pass`,
-                })
-              }
-              onOpenSubscriptionsPage={() => setActiveSection('subscriptions')}
+              onOpenSubscribe={() => void handleOpenSubscribe()}
+              onOpenDashboardLeaderboard={handleOpenDashboardLeaderboard}
               onViewProfile={(uid) => setViewingProfileUid(uid)}
               onNotify={showToast}
               uploadRequestedNonce={videoUploadNonce}
@@ -405,11 +446,11 @@ function MoodSpaceShell() {
         )}
       </div>
 
-      <footer className="border-t border-[#E7E5E0] bg-[#FAF9F7] mt-16">
+      <footer className="hidden md:block border-t border-[#E7E5E0] bg-[#FAF9F7] mt-16">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#5E5D59]">
           <p className="font-medium text-[#141413]">MoodSpace Africa</p>
           <p>
-            Pan-African video storytelling, community support, story boosts, and creator subscriptions.
+            Pan-African video storytelling, community votes, and Creator Pass membership via Paystack.
           </p>
         </div>
       </footer>
@@ -421,29 +462,25 @@ function MoodSpaceShell() {
             allVideos={allVideos}
             verifiedBadges={verifiedBadges}
             followingIds={followingIds}
-            subscribedTargetIds={subscribedTargetIds}
+            hasCreatorPass={hasCreatorPass}
             onClose={() => setViewingProfileUid(null)}
             onSelectProfile={(uid) => setViewingProfileUid(uid)}
             onToggleFollow={(target) => void handleToggleFollow(target)}
-            onSubscribeCreator={(creatorId, creatorName, location) =>
-              void handleStartSubscription({
-                planType: 'creator_fan',
-                targetId: creatorId,
-                targetName: creatorName,
-                targetSubtitle: `${location} · Monthly Fan Pass`,
-              })
-            }
+            onOpenSubscribe={() => void handleOpenSubscribe()}
             onJumpToStory={handleJumpToStory}
-            onOpenEditProfile={() => setActiveSection('dashboard')}
+            onOpenEditProfile={() => {
+              setDashboardInitialTab('profile');
+              setDashboardTabNonce((n) => n + 1);
+              setActiveSection('dashboard');
+            }}
           />
         </Suspense>
       )}
 
-      {checkoutTarget && (
-        <MoMoCheckoutModal
-          target={checkoutTarget}
-          onClose={() => setCheckoutTarget(null)}
-          onConfirm={handleConfirmCheckout}
+      {subscribeModalOpen && (
+        <PaystackCheckoutModal
+          onClose={() => setSubscribeModalOpen(false)}
+          onConfirm={handleConfirmPaystackSubscribe}
         />
       )}
 

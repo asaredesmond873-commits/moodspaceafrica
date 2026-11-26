@@ -3,10 +3,6 @@ import {
   BadgeCheck,
   Bookmark,
   CheckCircle2,
-  Crown,
-  Flame,
-  Flower2,
-  Gift,
   Heart,
   MapPin,
   MessageCircle,
@@ -15,14 +11,12 @@ import {
   Share2,
   ThumbsUp,
   Trash2,
-  Trophy,
   UserCheck,
   UserPlus,
   Volume2,
   VolumeX,
   Wifi,
   X,
-  Zap,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -33,7 +27,6 @@ import {
   incrementChallengeVideoShare,
   incrementChallengeVideoView,
   loadChallengeVideoChunks,
-  sendChallengeGift,
   subscribeChallengeVideoComments,
   toggleChallengeVideoLike,
 } from '../services/challengeService';
@@ -44,7 +37,6 @@ import {
   type ChallengeDailyVote,
   type ChallengeVideo,
   type ChallengeVideoComment,
-  type GiftType,
   type VerifiedBadgeInfo,
 } from '../types';
 import {
@@ -62,57 +54,12 @@ interface VideoReelCardProps {
   dailyVote: ChallengeDailyVote | null;
   verifiedBadges: Record<string, VerifiedBadgeInfo>;
   isFollowing: boolean;
-  isSubscribedToCreator: boolean;
   isSaved: boolean;
   onToggleFollow: (target: FollowTargetSummary) => void;
-  onSubscribeCreator: (creatorId: string, creatorName: string, location: string) => void;
   onToggleSaved: (videoId: string) => void;
   onVote: (video: ChallengeVideo) => Promise<void>;
-  onOpenBoost: (video: ChallengeVideo) => void;
   onViewProfile: (uid: string) => void;
   onNotify: (msg: string) => void;
-}
-
-interface FloatingGift {
-  id: number;
-  type: GiftType;
-  label: string;
-}
-
-const GIFT_OPTIONS: {
-  type: GiftType;
-  label: string;
-  tierHint: string;
-  amount: number;
-  accentClass: string;
-}[] = [
-  {
-    type: 'rose',
-    label: 'Rose',
-    tierHint: 'Starter support',
-    amount: CHALLENGE_LIMITS.GIFT_PRICES.rose,
-    accentClass: 'text-[#E11D48]',
-  },
-  {
-    type: 'fire',
-    label: 'Fire',
-    tierHint: 'Hype boost',
-    amount: CHALLENGE_LIMITS.GIFT_PRICES.fire,
-    accentClass: 'text-[#EA580C]',
-  },
-  {
-    type: 'lion',
-    label: 'Lion',
-    tierHint: 'Champion gift',
-    amount: CHALLENGE_LIMITS.GIFT_PRICES.lion,
-    accentClass: 'text-[#D97706]',
-  },
-];
-
-function GiftGlyph({ type, className = 'w-4 h-4' }: { type: GiftType; className?: string }) {
-  if (type === 'rose') return <Flower2 className={`${className} text-[#E11D48]`} />;
-  if (type === 'fire') return <Flame className={`${className} text-[#EA580C]`} />;
-  return <Trophy className={`${className} text-[#D97706]`} />;
 }
 
 export function VideoReelCard({
@@ -122,13 +69,10 @@ export function VideoReelCard({
   dailyVote,
   verifiedBadges,
   isFollowing,
-  isSubscribedToCreator,
   isSaved,
   onToggleFollow,
-  onSubscribeCreator,
   onToggleSaved,
   onVote,
-  onOpenBoost,
   onViewProfile,
   onNotify,
 }: VideoReelCardProps) {
@@ -149,10 +93,6 @@ export function VideoReelCard({
   const [liked, setLiked] = useState(false);
   const [likeBusy, setLikeBusy] = useState(false);
   const [voteBusy, setVoteBusy] = useState(false);
-  const [giftTrayOpen, setGiftTrayOpen] = useState(false);
-  const [pendingGift, setPendingGift] = useState<(typeof GIFT_OPTIONS)[number] | null>(null);
-  const [giftBusy, setGiftBusy] = useState(false);
-  const [floatingGifts, setFloatingGifts] = useState<FloatingGift[]>([]);
 
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [comments, setComments] = useState<ChallengeVideoComment[]>([]);
@@ -160,7 +100,6 @@ export function VideoReelCard({
   const [commentBusy, setCommentBusy] = useState(false);
   const [deletingVideo, setDeletingVideo] = useState(false);
 
-  const isBoosted = video.boostedUntil > Date.now();
   const badge = verifiedBadges[video.authorId];
   const hasVotedThisVideo = dailyVote?.videoId === video.id;
   const hasUsedDailyVoteElsewhere = Boolean(dailyVote && dailyVote.videoId !== video.id);
@@ -347,36 +286,6 @@ export function VideoReelCard({
     }
   };
 
-  const handleConfirmSendGift = async (opt: (typeof GIFT_OPTIONS)[number]) => {
-    let activeProfile = profile;
-    if (!user || !activeProfile) {
-      activeProfile = await signInWithGoogle();
-      if (!activeProfile) return;
-    }
-    if (giftBusy) return;
-    setGiftBusy(true);
-    setGiftTrayOpen(false);
-    setPendingGift(null);
-
-    const animId = Date.now() + Math.floor(Math.random() * 1000);
-    setFloatingGifts((prev) => [
-      ...prev,
-      { id: animId, type: opt.type, label: opt.label },
-    ]);
-    window.setTimeout(() => {
-      setFloatingGifts((prev) => prev.filter((item) => item.id !== animId));
-    }, 1850);
-
-    try {
-      await sendChallengeGift(video.id, activeProfile, opt.type);
-      onNotify(`Sent ${opt.label} support to ${video.authorName}!`);
-    } catch {
-      onNotify('Could not send support gift. Please try again.');
-    } finally {
-      setGiftBusy(false);
-    }
-  };
-
   const handleShare = async () => {
     const shareUrl = `${window.location.origin}/#video=${video.id}`;
     try {
@@ -479,56 +388,34 @@ export function VideoReelCard({
 
         <div className="flex items-center gap-1.5 shrink-0">
           {!isOwnVideo && (
-            <>
-              <button
-                type="button"
-                onClick={() =>
-                  onSubscribeCreator(
-                    video.authorId,
-                    video.authorName,
-                    video.authorLocation || 'Africa'
-                  )
-                }
-                title={isSubscribedToCreator ? 'Subscribed to storyteller' : 'Subscribe to storyteller'}
-                className={`min-h-[34px] px-2.5 py-1 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap ${
-                  isSubscribedToCreator
-                    ? 'bg-[#FEF3C7] border border-[#FCD34D] text-[#92400E]'
-                    : 'bg-[#FAF9F7] border border-[#E7E5E0] text-[#141413] hover:border-[#0E7C5B] hover:text-[#0E7C5B]'
-                }`}
-              >
-                <Crown className="w-3 h-3" />
-                <span>{isSubscribedToCreator ? 'Subscribed' : 'Subscribe'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  onToggleFollow({
-                    uid: video.authorId,
-                    displayName: video.authorName,
-                    avatarUrl: video.authorAvatar,
-                    location: video.authorLocation || 'Africa',
-                  })
-                }
-                className={`min-h-[34px] px-2.5 py-1 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap ${
-                  isFollowing
-                    ? 'bg-[#FAF9F7] border border-[#E7E5E0] text-[#141413] hover:bg-[#F2F0EC]'
-                    : 'bg-[#0E7C5B] text-white hover:bg-[#095E44]'
-                }`}
-              >
-                {isFollowing ? (
-                  <>
-                    <UserCheck className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Following</span>
-                  </>
-                ) : (
-                  <>
-                    <UserPlus className="w-3.5 h-3.5" />
-                    <span>Follow</span>
-                  </>
-                )}
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={() =>
+                onToggleFollow({
+                  uid: video.authorId,
+                  displayName: video.authorName,
+                  avatarUrl: video.authorAvatar,
+                  location: video.authorLocation || 'Africa',
+                })
+              }
+              className={`min-h-[34px] px-3 py-1 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap ${
+                isFollowing
+                  ? 'bg-[#FAF9F7] border border-[#E7E5E0] text-[#141413] hover:bg-[#F2F0EC]'
+                  : 'bg-[#0E7C5B] text-white hover:bg-[#095E44]'
+              }`}
+            >
+              {isFollowing ? (
+                <>
+                  <UserCheck className="w-3.5 h-3.5" />
+                  <span>Following</span>
+                </>
+              ) : (
+                <>
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>Follow</span>
+                </>
+              )}
+            </button>
           )}
           {isOwnerOrAdmin && (
             <button
@@ -641,12 +528,6 @@ export function VideoReelCard({
               <span aria-hidden="true">·</span>
               <span>{formatCompactCount(video.viewsCount)} views</span>
             </div>
-            {isBoosted && (
-              <span className="inline-flex items-center gap-1 text-[#A7F3D0] text-[11px] font-semibold px-1">
-                <Zap className="w-3 h-3 fill-current" />
-                Boosted
-              </span>
-            )}
             {dataSaver && (
               <span className="inline-flex items-center gap-1 text-[#A7F3D0] text-[11px] font-medium px-1">
                 <Wifi className="w-3 h-3" />
@@ -679,19 +560,6 @@ export function VideoReelCard({
               {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
             </button>
           </div>
-        </div>
-
-        {/* Floating Gift Burst Animation (Clean icons, zero money overlay) */}
-        <div className="pointer-events-none absolute inset-0 z-30 overflow-hidden">
-          {floatingGifts.map((fg) => (
-            <div
-              key={fg.id}
-              className="animate-gift-float absolute left-1/2 bottom-24 flex items-center gap-2 px-4 py-2 rounded-full bg-white text-[#141413] shadow-xl border border-[#E7E5E0]"
-            >
-              <GiftGlyph type={fg.type} className="w-5 h-5" />
-              <span className="text-xs font-bold text-[#0E7C5B]">+{fg.label} Sent</span>
-            </div>
-          ))}
         </div>
 
         {/* Bottom Gradient Scrim + Story Title Only (No Description) */}
@@ -761,94 +629,6 @@ export function VideoReelCard({
               {hasVotedThisVideo ? 'Voted' : 'Vote'} ({formatCompactCount(video.votesCount)})
             </span>
           </button>
-
-          {/* Support Creator Gift Tray */}
-          <div className="relative flex flex-col items-center">
-            <button
-              type="button"
-              onClick={() => {
-                setGiftTrayOpen((open) => !open);
-                setPendingGift(null);
-              }}
-              aria-label="Support creator with gift"
-              className="min-w-[44px] min-h-[44px] flex flex-col items-center justify-center gap-0.5 cursor-pointer"
-            >
-              <div className="w-11 h-11 rounded-full bg-black/50 backdrop-blur-xs text-white flex items-center justify-center">
-                <Gift className="w-5 h-5" />
-              </div>
-              <span className="text-[11px] font-semibold text-white tabular-nums drop-shadow">
-                {video.giftsCount > 0 ? formatCompactCount(video.giftsCount) : 'Support'}
-              </span>
-            </button>
-
-            {giftTrayOpen && (
-              <div className="absolute right-14 bottom-0 w-56 bg-white border border-[#E7E5E0] rounded-2xl p-2.5 space-y-1.5 shadow-2xl z-30 text-[#141413]">
-                <div className="flex items-center justify-between px-1 pb-1 border-b border-[#E7E5E0]">
-                  <span className="text-[11px] font-bold text-[#141413]">
-                    {pendingGift ? 'Confirm Support Gift' : 'Support Storyteller'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setGiftTrayOpen(false);
-                      setPendingGift(null);
-                    }}
-                    aria-label="Close support menu"
-                    className="text-[#5E5D59] hover:text-[#141413] cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                {pendingGift ? (
-                  <div className="p-2 space-y-2.5 bg-[#FAF9F7] rounded-xl border border-[#E7E5E0]">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="inline-flex items-center gap-1.5 font-bold text-[#141413]">
-                        <GiftGlyph type={pendingGift.type} className="w-4 h-4" />
-                        {pendingGift.label}
-                      </span>
-                      <span className="font-bold text-[#0E7C5B] tabular-nums">
-                        {pendingGift.amount} GHS
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setPendingGift(null)}
-                        className="flex-1 min-h-[34px] rounded-lg border border-[#E7E5E0] bg-white text-[11px] font-semibold text-[#5E5D59] cursor-pointer"
-                      >
-                        Back
-                      </button>
-                      <button
-                        type="button"
-                        disabled={giftBusy}
-                        onClick={() => void handleConfirmSendGift(pendingGift)}
-                        className="flex-[1.5] min-h-[34px] rounded-lg bg-[#0E7C5B] text-white text-[11px] font-semibold hover:bg-[#095E44] cursor-pointer"
-                      >
-                        Send Gift
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  GIFT_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.type}
-                      type="button"
-                      disabled={giftBusy}
-                      onClick={() => setPendingGift(opt)}
-                      className="w-full min-h-[40px] px-2.5 py-1.5 rounded-xl bg-[#FAF9F7] hover:bg-[#ECFDF5] border border-[#E7E5E0] flex items-center justify-between text-xs font-semibold text-[#141413] cursor-pointer"
-                    >
-                      <span className="flex items-center gap-2">
-                        <GiftGlyph type={opt.type} className="w-4 h-4" />
-                        <span>{opt.label}</span>
-                      </span>
-                      <span className="text-[11px] font-medium text-[#5E5D59]">{opt.tierHint}</span>
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
 
           <button
             type="button"
@@ -960,7 +740,7 @@ export function VideoReelCard({
         )}
       </div>
 
-      {/* Footer: Vote status + Boost Story (price revealed only when opening checkout) */}
+      {/* Footer: Free Daily Vote & Storyteller Profile */}
       <div className="px-4 py-2.5 bg-white border-t border-[#E7E5E0] flex items-center justify-between gap-2 text-xs">
         <button
           type="button"
@@ -980,11 +760,10 @@ export function VideoReelCard({
 
         <button
           type="button"
-          onClick={() => onOpenBoost(video)}
+          onClick={() => onViewProfile(video.authorId)}
           className="min-h-[36px] px-3 py-1 rounded-lg border border-[#E7E5E0] bg-[#FAF9F7] hover:border-[#0E7C5B] hover:text-[#0E7C5B] text-[#141413] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
         >
-          <Zap className="w-3.5 h-3.5 text-[#0E7C5B]" />
-          <span>{isBoosted ? 'Boosted · 24h' : 'Boost Story'}</span>
+          <span>View Profile</span>
         </button>
       </div>
     </article>

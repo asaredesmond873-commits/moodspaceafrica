@@ -264,7 +264,7 @@ export function WinnerSpotlightCard({
           {isAdmin && pickingWinner && sortedBySupport.length > 0 && (
             <div className="bg-[#FAF9F7] border border-[#E7E5E0] rounded-xl p-2.5 space-y-1.5 max-h-44 overflow-y-auto">
               <p className="text-[11px] font-semibold text-[#5E5D59]">
-                Ranked by support, gifts &amp; boosts:
+                Ranked by votes &amp; engagement:
               </p>
               {sortedBySupport.slice(0, 10).map((v) => (
                 <button
@@ -280,7 +280,7 @@ export function WinnerSpotlightCard({
                     {v.authorName} — {v.title}
                   </span>
                   <span className="text-[#0E7C5B] font-semibold tabular-nums shrink-0">
-                    {v.votesCount}v · {v.giftsCount} gifts{v.boostedUntil > Date.now() ? ' · Boosted' : ''}
+                    {v.votesCount}v · {v.viewsCount} views
                   </span>
                 </button>
               ))}
