@@ -152,14 +152,12 @@ export const SCHEMA_LIMITS = {
 } as const;
 
 export const AFRICAN_CITIES = [
+  'Lagos, Nigeria',
+  'Abuja, Nigeria',
+  'Nairobi, Kenya',
+  'Mombasa, Kenya',
   'Accra, Ghana',
   'Kumasi, Ghana',
-  'Takoradi, Ghana',
-  'Tamale, Ghana',
-  'Cape Coast, Ghana',
-  'Tema, Ghana',
-  'Lagos, Nigeria',
-  'Nairobi, Kenya',
   'Johannesburg, South Africa',
   'Cape Town, South Africa',
   'Kigali, Rwanda',
@@ -172,4 +170,163 @@ export const AFRICAN_CITIES = [
   'Casablanca, Morocco',
   'Lusaka, Zambia',
   'Harare, Zimbabwe',
+  'Douala, Cameroon',
+  'Kinshasa, DR Congo',
+  'Gaborone, Botswana',
+  'Windhoek, Namibia',
+  'Tunis, Tunisia',
+  'Maputo, Mozambique',
 ] as const;
+
+export type AfricanRegion =
+  | 'All Africa'
+  | 'West Africa'
+  | 'East Africa'
+  | 'Southern Africa'
+  | 'North Africa'
+  | 'Central Africa';
+
+export const AFRICAN_REGIONS: AfricanRegion[] = [
+  'All Africa',
+  'West Africa',
+  'East Africa',
+  'Southern Africa',
+  'North Africa',
+  'Central Africa',
+];
+
+export type GiftType = 'rose' | 'fire' | 'lion';
+export type MoMoProvider =
+  | 'MTN MoMo'
+  | 'M-Pesa'
+  | 'Airtel Money'
+  | 'Telecel Cash'
+  | 'AirtelTigo Money';
+
+export type SubscriptionPlanType = 'creator_fan' | 'creator_pro';
+
+export interface CreatorSubscription {
+  id: string;
+  subscriberId: string;
+  subscriberName: string;
+  targetId: string;
+  targetName: string;
+  planType: SubscriptionPlanType;
+  amountGhs: number;
+  provider: MoMoProvider;
+  maskedPhone: string;
+  status: 'active' | 'cancelled';
+  expiresAt: number;
+  createdAt: Timestamp | null;
+  updatedAt: Timestamp | null;
+}
+
+export const SUBSCRIPTION_PLANS = {
+  CREATOR_FAN_GHS: 15,
+  CREATOR_PRO_GHS: 35,
+  DURATION_DAYS: 30,
+  DURATION_MS: 30 * 24 * 60 * 60 * 1000,
+  PRO_TARGET_ID: 'moodspace_pro',
+  PRO_TARGET_NAME: 'MoodSpace Creator Pro',
+} as const;
+
+export interface ChallengeVideo {
+  id: string;
+  roundId: string;
+  authorId: string;
+  authorName: string;
+  authorAvatar: string;
+  authorLocation: string;
+  title: string;
+  caption: string;
+  thumbnailUrl: string;
+  mimeType: string;
+  durationSeconds: number;
+  fileSizeBytes: number;
+  chunkCount: number;
+  videoReady: boolean;
+  isActive: boolean;
+  likesCount: number;
+  commentsCount: number;
+  sharesCount: number;
+  viewsCount: number;
+  votesCount: number;
+  giftsCount: number;
+  giftsTotalGhs: number;
+  boostedUntil: number;
+  createdAt: Timestamp | null;
+  updatedAt: Timestamp | null;
+}
+
+export interface ChallengeVideoComment {
+  id: string;
+  videoId: string;
+  authorId: string;
+  authorName: string;
+  authorAvatar: string;
+  text: string;
+  createdAt: Timestamp | null;
+}
+
+export interface ChallengeVideoGift {
+  id: string;
+  videoId: string;
+  senderId: string;
+  senderName: string;
+  giftType: GiftType;
+  amountGhs: number;
+  createdAt: Timestamp | null;
+}
+
+export interface ChallengeVideoBoost {
+  id: string;
+  videoId: string;
+  payerId: string;
+  provider: MoMoProvider;
+  maskedPhone: string;
+  amountGhs: number;
+  boostedUntil: number;
+  createdAt: Timestamp | null;
+}
+
+export interface ChallengeDailyVote {
+  userId: string;
+  dateKey: string;
+  videoId: string;
+  createdAt: Timestamp | null;
+}
+
+export interface ChallengeConfig {
+  isPublic: boolean;
+  sponsorName: string;
+  prizeGhs: number;
+  winnerVideoId: string;
+  winnerName: string;
+  winnerLocation: string;
+  winnerTitle: string;
+  winnerThumbnailUrl: string;
+  winnerRoundLabel: string;
+  winnerPrizeGhs: number;
+  updatedAt: Timestamp | null;
+}
+
+export const CHALLENGE_LIMITS = {
+  ROUND_DAYS: 14,
+  MIN_DURATION_SEC: 30,
+  MAX_DURATION_SEC: 90,
+  MAX_FILE_BYTES: 15 * 1024 * 1024, // strictly < 15MB (15,728,640 bytes)
+  MAX_CHUNKS: 40,
+  CHUNK_RAW_BYTES: 460 * 1024, // ~615KB base64 per chunk (< 750KB limit)
+  TITLE_MAX: 120,
+  CAPTION_MAX: 400,
+  COMMENT_MAX: 500,
+  THUMBNAIL_MAX: 195000,
+  PRIZE_GHS: 300,
+  BOOST_COST_GHS: 20,
+  BOOST_DURATION_MS: 24 * 60 * 60 * 1000,
+  GIFT_PRICES: {
+    rose: 2,
+    fire: 5,
+    lion: 20,
+  },
+} as const;

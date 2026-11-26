@@ -90,7 +90,7 @@ export function ensureUserProfile(user: User): Promise<PublicProfile> {
         uid: user.uid,
         displayName: clampString(fallbackName, SCHEMA_LIMITS.DISPLAY_NAME_MAX) || 'MoodSpace Member',
         bio: '',
-        location: 'Accra, Ghana',
+        location: 'Africa',
         accountType: 'creator',
         avatarUrl: clampString(user.photoURL || '', SCHEMA_LIMITS.AVATAR_URL_MAX),
         isPublic: true,

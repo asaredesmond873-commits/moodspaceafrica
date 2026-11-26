@@ -34,3 +34,64 @@
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes gift-float {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 24px) scale(0.75);
+  }
+  18% {
+    opacity: 1;
+    transform: translate(-50%, -8px) scale(1.08);
+  }
+  75% {
+    opacity: 1;
+    transform: translate(-50%, -62px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -104px) scale(0.92);
+  }
+}
+
+@keyframes confetti-fall {
+  0% {
+    opacity: 0;
+    transform: translateY(-16px) rotate(0deg);
+  }
+  15% {
+    opacity: 0.95;
+  }
+  85% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(230px) rotate(540deg);
+  }
+}
+
+.animate-gift-float {
+  animation: gift-float 1.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.animate-confetti-fall {
+  animation: confetti-fall 2.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-gift-float,
+  .animate-confetti-fall {
+    animation: none !important;
+  }
+}
+

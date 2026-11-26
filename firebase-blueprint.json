@@ -538,12 +538,189 @@
         }
       },
       "required": ["id", "postId", "postAuthorId", "submitterId", "submitterName", "answers", "createdAt"]
+    },
+    "ChallengeVideo": {
+      "title": "ChallengeVideo",
+      "description": "Vertical video entry for the 14-day MoodSpace Video Arena round (30-90s, <15MB, max 1 per user per round).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "roundId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 64 },
+        "authorId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "authorName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "authorAvatar": { "type": "string", "maxLength": 150000 },
+        "authorLocation": { "type": "string", "maxLength": 100 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "caption": { "type": "string", "maxLength": 400 },
+        "thumbnailUrl": { "type": "string", "maxLength": 200000 },
+        "mimeType": { "type": "string", "maxLength": 60 },
+        "durationSeconds": { "type": "number" },
+        "fileSizeBytes": { "type": "integer" },
+        "chunkCount": { "type": "integer" },
+        "videoReady": { "type": "boolean" },
+        "isActive": { "type": "boolean" },
+        "likesCount": { "type": "integer" },
+        "commentsCount": { "type": "integer" },
+        "sharesCount": { "type": "integer" },
+        "viewsCount": { "type": "integer" },
+        "votesCount": { "type": "integer" },
+        "giftsCount": { "type": "integer" },
+        "giftsTotalGhs": { "type": "integer" },
+        "boostedUntil": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "roundId", "authorId", "authorName", "authorAvatar", "authorLocation",
+        "title", "caption", "thumbnailUrl", "mimeType", "durationSeconds", "fileSizeBytes",
+        "chunkCount", "videoReady", "isActive", "likesCount", "commentsCount", "sharesCount",
+        "viewsCount", "votesCount", "giftsCount", "giftsTotalGhs", "boostedUntil", "createdAt", "updatedAt"
+      ]
+    },
+    "ChallengeVideoChunk": {
+      "title": "ChallengeVideoChunk",
+      "description": "Base64 media chunk belonging to a ChallengeVideo.",
+      "type": "object",
+      "properties": {
+        "videoId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "authorId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "index": { "type": "integer" },
+        "data": { "type": "string", "maxLength": 750000 }
+      },
+      "required": ["videoId", "authorId", "index", "data"]
+    },
+    "ChallengeVideoLike": {
+      "title": "ChallengeVideoLike",
+      "description": "User like on a ChallengeVideo.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "videoId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "videoId", "createdAt"]
+    },
+    "ChallengeVideoComment": {
+      "title": "ChallengeVideoComment",
+      "description": "Comment on a ChallengeVideo.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "videoId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "authorId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "authorName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "authorAvatar": { "type": "string", "maxLength": 150000 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "videoId", "authorId", "authorName", "authorAvatar", "text", "createdAt"]
+    },
+    "ChallengeVideoGift": {
+      "title": "ChallengeVideoGift",
+      "description": "Virtual gift sent to a video creator (Rose 2 GHS, Fire 5 GHS, Lion 20 GHS).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "videoId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "senderId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "senderName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "giftType": { "type": "string", "enum": ["rose", "fire", "lion"] },
+        "amountGhs": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "videoId", "senderId", "senderName", "giftType", "amountGhs", "createdAt"]
+    },
+    "ChallengeVideoBoost": {
+      "title": "ChallengeVideoBoost",
+      "description": "24-hour MoMo video boost transaction record (20 GHS).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "videoId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "payerId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "provider": { "type": "string", "enum": ["MTN MoMo", "M-Pesa", "Airtel Money", "Telecel Cash", "AirtelTigo Money"] },
+        "maskedPhone": { "type": "string", "minLength": 4, "maxLength": 20 },
+        "amountGhs": { "type": "integer" },
+        "boostedUntil": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "videoId", "payerId", "provider", "maskedPhone", "amountGhs", "boostedUntil", "createdAt"]
+    },
+    "ChallengeDailyVote": {
+      "title": "ChallengeDailyVote",
+      "description": "Enforces one free vote per user per day across all challenge videos.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "dateKey": { "type": "string", "pattern": "^[0-9]{4}_[0-9]{2}_[0-9]{2}$", "maxLength": 16 },
+        "videoId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "dateKey", "videoId", "createdAt"]
+    },
+    "ChallengeConfig": {
+      "title": "ChallengeConfig",
+      "description": "Admin-managed prize amount and previous round winner metadata.",
+      "type": "object",
+      "properties": {
+        "isPublic": { "type": "boolean" },
+        "sponsorName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "prizeGhs": { "type": "integer" },
+        "winnerVideoId": { "type": "string", "maxLength": 128 },
+        "winnerName": { "type": "string", "maxLength": 80 },
+        "winnerLocation": { "type": "string", "maxLength": 100 },
+        "winnerTitle": { "type": "string", "maxLength": 120 },
+        "winnerThumbnailUrl": { "type": "string", "maxLength": 200000 },
+        "winnerRoundLabel": { "type": "string", "maxLength": 60 },
+        "winnerPrizeGhs": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "isPublic", "sponsorName", "prizeGhs", "winnerVideoId", "winnerName",
+        "winnerLocation", "winnerTitle", "winnerThumbnailUrl", "winnerRoundLabel", "winnerPrizeGhs", "updatedAt"
+      ]
+    },
+    "CreatorSubscription": {
+      "title": "CreatorSubscription",
+      "description": "Monthly fan subscription to an African storyteller or MoodSpace Creator Pro membership.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "subscriberId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "subscriberName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "targetId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "targetName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "planType": { "type": "string", "enum": ["creator_fan", "creator_pro"] },
+        "amountGhs": { "type": "integer" },
+        "provider": { "type": "string", "enum": ["MTN MoMo", "M-Pesa", "Airtel Money", "Telecel Cash", "AirtelTigo Money"] },
+        "maskedPhone": { "type": "string", "minLength": 4, "maxLength": 20 },
+        "status": { "type": "string", "enum": ["active", "cancelled"] },
+        "expiresAt": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id", "subscriberId", "subscriberName", "targetId", "targetName",
+        "planType", "amountGhs", "provider", "maskedPhone", "status",
+        "expiresAt", "createdAt", "updatedAt"
+      ]
+    },
+    "SavedVideo": {
+      "title": "SavedVideo",
+      "description": "Owner-only bookmark linking a user to a saved African story video.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "videoId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "videoId", "createdAt"]
     }
   },
   "firestore": {
     "/publicProfiles/{userId}": {
       "schema": { "$ref": "#/entities/PublicProfile" },
-      "description": "Publicly discoverable creator and business profile information without PII."
+      "description": "Publicly discoverable creator profile information without PII."
     },
     "/publicProfiles/{userId}/followers/{followerId}": {
       "schema": { "$ref": "#/entities/FollowRecord" },
@@ -561,25 +738,65 @@
       "schema": { "$ref": "#/entities/SavedPost" },
       "description": "Owner-only saved post bookmarks."
     },
+    "/userPrivate/{userId}/savedVideos/{videoId}": {
+      "schema": { "$ref": "#/entities/SavedVideo" },
+      "description": "Owner-only saved African video story bookmarks."
+    },
     "/verificationRequests/{userId}": {
       "schema": { "$ref": "#/entities/VerificationRequest" },
       "description": "Identity proof requests readable only by the applicant and the bootstrapped admin."
     },
     "/posts/{postId}": {
       "schema": { "$ref": "#/entities/Post" },
-      "description": "Community announcements, events, and promos with optional adjustable form configurations."
+      "description": "Legacy community posts."
     },
     "/posts/{postId}/likes/{userId}": {
       "schema": { "$ref": "#/entities/PostLike" },
-      "description": "Per-user like records synchronized atomically with post likesCount."
+      "description": "Legacy per-user like records."
     },
     "/posts/{postId}/comments/{commentId}": {
       "schema": { "$ref": "#/entities/PostComment" },
-      "description": "Comments on a community post."
+      "description": "Legacy comments."
     },
     "/posts/{postId}/submissions/{submissionId}": {
       "schema": { "$ref": "#/entities/FormSubmission" },
-      "description": "Form submissions visible only to the post creator and the submitter."
+      "description": "Legacy form submissions."
+    },
+    "/challengeVideos/{videoId}": {
+      "schema": { "$ref": "#/entities/ChallengeVideo" },
+      "description": "14-day round African video story entries (1 per user per round, 30-90s, <15MB)."
+    },
+    "/challengeVideos/{videoId}/chunks/{chunkId}": {
+      "schema": { "$ref": "#/entities/ChallengeVideoChunk" },
+      "description": "Chunked binary media payloads for uploaded African story videos."
+    },
+    "/challengeVideos/{videoId}/likes/{userId}": {
+      "schema": { "$ref": "#/entities/ChallengeVideoLike" },
+      "description": "Atomic per-user likes on African story videos."
+    },
+    "/challengeVideos/{videoId}/comments/{commentId}": {
+      "schema": { "$ref": "#/entities/ChallengeVideoComment" },
+      "description": "Comments on African story videos."
+    },
+    "/challengeVideos/{videoId}/gifts/{giftId}": {
+      "schema": { "$ref": "#/entities/ChallengeVideoGift" },
+      "description": "Creator support gift records (Rose 2 GHS, Fire 5 GHS, Lion 20 GHS)."
+    },
+    "/challengeVideos/{videoId}/boosts/{boostId}": {
+      "schema": { "$ref": "#/entities/ChallengeVideoBoost" },
+      "description": "24-hour mobile money video boost receipts (20 GHS)."
+    },
+    "/challengeDailyVotes/{voteId}": {
+      "schema": { "$ref": "#/entities/ChallengeDailyVote" },
+      "description": "Daily free vote records keyed by {userId}__{YYYY_MM_DD}."
+    },
+    "/challengeConfig/{configId}": {
+      "schema": { "$ref": "#/entities/ChallengeConfig" },
+      "description": "Publicly readable round reward and previous winner metadata managed by admin."
+    },
+    "/creatorSubscriptions/{subId}": {
+      "schema": { "$ref": "#/entities/CreatorSubscription" },
+      "description": "Monthly subscriptions supporting African storytellers and MoodSpace Creator Pro memberships."
     }
   }
 }

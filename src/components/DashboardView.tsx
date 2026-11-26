@@ -1,179 +1,182 @@
+import { useEffect, useMemo, useState } from 'react';
 import {
+  Award,
   BadgeCheck,
-  BarChart3,
+  Bookmark,
   CheckCircle2,
-  ClipboardList,
-  Clock,
-  Download,
-  ExternalLink,
+  Crown,
   Eye,
-  EyeOff,
-  FileText,
-  ImagePlus,
+  Film,
+  Flame,
+  Gift,
+  Globe2,
+  Heart,
   LogOut,
-  MessageSquare,
-  Pencil,
-  Plus,
+  MapPin,
+  MessageCircle,
+  Share2,
   ShieldCheck,
+  ThumbsUp,
   Trash2,
+  Trophy,
+  Upload,
   UserCheck,
   Users,
+  Video,
   XCircle,
+  Zap,
 } from 'lucide-react';
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
-  deleteFormSubmission,
-  deletePost,
-  deletePostComment,
-  fetchPostSubmissions,
+  deleteChallengeVideo,
+  saveChallengeConfig,
+  subscribeChallengeConfig,
+  subscribeCreatorSubscribers,
+} from '../services/challengeService';
+import {
   reviewVerificationRequest,
   submitVerificationRequest,
   subscribeAllVerificationRequests,
   subscribeMyVerificationRequest,
-  subscribePostComments,
-  subscribeProfileFollowers,
-  subscribeUserPosts,
-  togglePostFormOpen,
-  togglePostVisibility,
   updateUserProfile,
 } from '../services/firestoreService';
 import {
-  type AccountType,
   ADMIN_EMAIL,
   AFRICAN_CITIES,
-  type FormSubmission,
-  type Post,
-  type PostComment,
-  SCHEMA_LIMITS,
+  AFRICAN_REGIONS,
+  CHALLENGE_LIMITS,
+  type AccountType,
+  type ChallengeConfig,
+  type ChallengeVideo,
+  type CreatorSubscription,
   type VerificationCategory,
   type VerificationIdType,
   type VerificationRequest,
-  type VerificationStatus,
 } from '../types';
 import {
-  compressImageFile,
-  downloadSubmissionsCsv,
-  formatFullDate,
-  formatTimestamp,
-} from '../utils/media';
+  computeCreatorSupportScore,
+  formatCompactCount,
+  formatDurationSeconds,
+  getAfricanRegionFromLocation,
+  getCurrentChallengeRound,
+} from '../utils/challengeMedia';
+import { compressImageFile, formatFullDate, formatTimestamp } from '../utils/media';
+import { readSupporterStreak } from '../utils/streak';
 
 type DashboardTab =
   | 'overview'
-  | 'posts'
-  | 'responses'
+  | 'stories'
+  | 'saved'
+  | 'subscriptions'
   | 'verification'
-  | 'approvals'
+  | 'winner_admin'
   | 'profile';
 
 interface DashboardViewProps {
-  followingCount?: number;
-  onViewProfile?: (uid: string) => void;
-  onCreatePost: () => void;
-  onEditPost: (post: Post) => void;
+  allVideos: ChallengeVideo[];
+  roundVideos: ChallengeVideo[];
+  savedVideoIds: Set<string>;
+  mySubscriptions: CreatorSubscription[];
+  hasProSubscription: boolean;
+  followingCount: number;
+  onUploadStory: () => void;
+  onBoostVideo: (video: ChallengeVideo) => void;
+  onToggleSaved: (videoId: string) => void;
+  onOpenSubscriptionsPage: () => void;
+  onUpgradePro: () => void;
+  onCancelSubscription: (subId: string) => Promise<void>;
+  onJumpToStory: (videoId: string) => void;
+  onViewProfile: (uid: string) => void;
   onNotify: (message: string) => void;
 }
 
-const DEFAULT_BADGE_LABELS: Record<VerificationCategory, string> = {
-  creator: 'Verified Creator',
-  business: 'Verified Business',
-  organizer: 'Verified Organizer',
-  media: 'Verified Media',
-};
-
-const ID_TYPE_LABELS: Record<VerificationIdType, string> = {
-  ghana_card: 'Ghana Card / National ID (Masked)',
-  business_reg: 'Business Registration (RGD Ghana)',
-  social_handle: 'Official Social Media Handle',
-  website_press: 'Official Website / Press Feature',
+const DEFAULT_CONFIG: ChallengeConfig = {
+  isPublic: true,
+  sponsorName: 'Community',
+  prizeGhs: CHALLENGE_LIMITS.PRIZE_GHS,
+  winnerVideoId: '',
+  winnerName: 'Ama Serwaa',
+  winnerLocation: 'Accra, Ghana',
+  winnerTitle: 'Voices Along the Coast — Pan-African Rhythm',
+  winnerThumbnailUrl: '',
+  winnerRoundLabel: 'Last Round',
+  winnerPrizeGhs: CHALLENGE_LIMITS.PRIZE_GHS,
+  updatedAt: null,
 };
 
 export function DashboardView({
-  followingCount = 0,
+  allVideos,
+  roundVideos,
+  savedVideoIds,
+  mySubscriptions,
+  hasProSubscription,
+  followingCount,
+  onUploadStory,
+  onBoostVideo,
+  onToggleSaved,
+  onOpenSubscriptionsPage,
+  onUpgradePro,
+  onCancelSubscription,
+  onJumpToStory,
   onViewProfile,
-  onCreatePost,
-  onEditPost,
   onNotify,
 }: DashboardViewProps) {
-  const { user, profile, authReady, authBusy, signInWithGoogle, logout, setLocalProfile } =
-    useAuth();
+  const { user, profile, authReady, authBusy, signInWithGoogle, logout, setLocalProfile } = useAuth();
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
-  const [myPosts, setMyPosts] = useState<Post[]>([]);
-  const [postsLoading, setPostsLoading] = useState(true);
-  const [followersCount, setFollowersCount] = useState(0);
+  const [fanSubscribers, setFanSubscribers] = useState<CreatorSubscription[]>([]);
+  const [challengeConfig, setChallengeConfig] = useState<ChallengeConfig>(DEFAULT_CONFIG);
+  const [deletingVideoId, setDeletingVideoId] = useState<string | null>(null);
+  const [crowningVideoId, setCrowningVideoId] = useState<string | null>(null);
+  const [cancellingSubId, setCancellingSubId] = useState<string | null>(null);
 
-  const isAdmin = Boolean(user?.email && user.email === ADMIN_EMAIL);
-
-  // Content & interaction moderation state
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [moderatingPostId, setModeratingPostId] = useState<string | null>(null);
-  const [postComments, setPostComments] = useState<PostComment[]>([]);
-
-  // Form responses state
-  const [selectedFormPostId, setSelectedFormPostId] = useState<string>('');
-  const [submissions, setSubmissions] = useState<FormSubmission[]>([]);
-  const [loadingSubs, setLoadingSubs] = useState(false);
-  const [subSearch, setSubSearch] = useState('');
-
-  // Profile form state
+  // Profile & Region state
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
-  const [location, setLocation] = useState('Accra, Ghana');
+  const [location, setLocation] = useState('Lagos, Nigeria');
   const [accountType, setAccountType] = useState<AccountType>('creator');
   const [avatarUrl, setAvatarUrl] = useState('');
-  const [savingProfile, setSavingProfile] = useState(false);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
 
-  // Verification submission state
+  // Verification state
   const [myVerification, setMyVerification] = useState<VerificationRequest | null>(null);
+  const [allVerifications, setAllVerifications] = useState<VerificationRequest[]>([]);
   const [legalOrBrandName, setLegalOrBrandName] = useState('');
   const [verCategory, setVerCategory] = useState<VerificationCategory>('creator');
   const [idType, setIdType] = useState<VerificationIdType>('ghana_card');
   const [idReference, setIdReference] = useState('');
   const [proofLink, setProofLink] = useState('');
   const [proofImageUrl, setProofImageUrl] = useState('');
+  const [proposedLabel, setProposedLabel] = useState('Verified Storyteller');
   const [verNote, setVerNote] = useState('');
-  const [uploadingProof, setUploadingProof] = useState(false);
-  const [submittingVerification, setSubmittingVerification] = useState(false);
+  const [verSubmitting, setVerSubmitting] = useState(false);
+  const [reviewingUid, setReviewingUid] = useState<string | null>(null);
+  const [adminNotes, setAdminNotes] = useState<Record<string, string>>({});
+  const [adminLabels, setAdminLabels] = useState<Record<string, string>>({});
 
-  // Admin approval queue state
-  const [allRequests, setAllRequests] = useState<VerificationRequest[]>([]);
-  const [approvalFilter, setApprovalFilter] = useState<'all' | VerificationStatus>('pending');
-  const [reviewLabelMap, setReviewLabelMap] = useState<Record<string, string>>({});
-  const [reviewNoteMap, setReviewNoteMap] = useState<Record<string, string>>({});
-  const [reviewBusyUid, setReviewBusyUid] = useState<string | null>(null);
+  const isAdmin = Boolean(user?.email === ADMIN_EMAIL);
+  const round = useMemo(() => getCurrentChallengeRound(), []);
+  const now = Date.now();
 
   useEffect(() => {
     if (!profile) return;
-    setDisplayName(profile.displayName);
-    setBio(profile.bio);
-    setLocation(profile.location || 'Accra, Ghana');
-    setAccountType(profile.accountType);
-    setAvatarUrl(profile.avatarUrl);
+    setDisplayName(profile.displayName || '');
+    setBio(profile.bio || '');
+    setLocation(profile.location || 'Lagos, Nigeria');
+    setAccountType(profile.accountType || 'creator');
+    setAvatarUrl(profile.avatarUrl || '');
   }, [profile]);
 
   useEffect(() => {
     if (!user) {
-      setMyPosts([]);
-      setPostsLoading(false);
+      setFanSubscribers([]);
       setMyVerification(null);
-      setAllRequests([]);
+      setAllVerifications([]);
       return;
     }
 
-    setPostsLoading(true);
-    const unsubPosts = subscribeUserPosts(
-      user.uid,
-      (list) => {
-        setMyPosts(list);
-        setPostsLoading(false);
-      },
-      () => {
-        setPostsLoading(false);
-      }
-    );
-
-    const unsubMyVer = subscribeMyVerificationRequest(
+    const unsubSubs = subscribeCreatorSubscribers(user.uid, setFanSubscribers, () => {});
+    const unsubConfig = subscribeChallengeConfig(setChallengeConfig);
+    const unsubVer = subscribeMyVerificationRequest(
       user.uid,
       (req) => {
         setMyVerification(req);
@@ -184,150 +187,125 @@ export function DashboardView({
           setIdReference(req.idReference);
           setProofLink(req.proofLink);
           setProofImageUrl(req.proofImageUrl);
+          setProposedLabel(req.proposedLabel || 'Verified Storyteller');
           setVerNote(req.note);
         }
       },
       () => {}
     );
 
-    let unsubAdmin: (() => void) | null = null;
+    let unsubAllVer: (() => void) | null = null;
     if (user.email === ADMIN_EMAIL) {
-      unsubAdmin = subscribeAllVerificationRequests(setAllRequests, () => {});
+      unsubAllVer = subscribeAllVerificationRequests(setAllVerifications, () => {});
     }
 
-    const unsubFollowers = subscribeProfileFollowers(
-      user.uid,
-      (rows) => setFollowersCount(rows.length),
-      () => {}
-    );
-
     return () => {
-      unsubPosts();
-      unsubMyVer();
-      unsubFollowers();
-      if (unsubAdmin) unsubAdmin();
+      unsubSubs();
+      unsubConfig();
+      unsubVer();
+      if (unsubAllVer) unsubAllVer();
     };
   }, [user]);
 
-  useEffect(() => {
-    if (!moderatingPostId) {
-      setPostComments([]);
-      return;
-    }
-    const unsub = subscribePostComments(moderatingPostId, setPostComments, () => {
-      onNotify('Could not load comments for moderation.');
+  const myStories = useMemo(
+    () => (user ? allVideos.filter((v) => v.authorId === user.uid) : []),
+    [allVideos, user]
+  );
+
+  const savedStories = useMemo(
+    () => allVideos.filter((v) => savedVideoIds.has(v.id)),
+    [allVideos, savedVideoIds]
+  );
+
+  const activeMySubs = useMemo(
+    () => mySubscriptions.filter((s) => s.status === 'active' && s.expiresAt > now),
+    [mySubscriptions, now]
+  );
+
+  const myStats = useMemo(() => {
+    return myStories.reduce(
+      (acc, v) => {
+        acc.views += v.viewsCount;
+        acc.likes += v.likesCount;
+        acc.comments += v.commentsCount;
+        acc.shares += v.sharesCount;
+        acc.votes += v.votesCount;
+        acc.giftsCount += v.giftsCount;
+        if (v.boostedUntil > now) acc.activeBoosts += 1;
+        return acc;
+      },
+      { views: 0, likes: 0, comments: 0, shares: 0, votes: 0, giftsCount: 0, activeBoosts: 0 }
+    );
+  }, [myStories, now]);
+
+  const supporterStreak = useMemo(() => readSupporterStreak(), []);
+
+  const regionalReach = useMemo(() => {
+    const regions = AFRICAN_REGIONS.filter((r) => r !== 'All Africa');
+    const counts = new Map<string, number>();
+    regions.forEach((r) => counts.set(r, 0));
+    allVideos.forEach((v) => {
+      const reg = getAfricanRegionFromLocation(v.authorLocation);
+      counts.set(reg, (counts.get(reg) ?? 0) + 1);
     });
-    return () => unsub();
-  }, [moderatingPostId]);
+    const total = Math.max(1, allVideos.length);
+    return regions.map((region) => {
+      const count = counts.get(region) ?? 0;
+      const pct = Math.round((count / total) * 100);
+      return { region, count, pct };
+    });
+  }, [allVideos]);
 
-  const postsWithForms = useMemo(() => myPosts.filter((p) => p.hasForm), [myPosts]);
+  const adminSortedRoundStories = useMemo(() => {
+    return [...roundVideos].sort(
+      (a, b) => computeCreatorSupportScore(b, now) - computeCreatorSupportScore(a, now)
+    );
+  }, [roundVideos, now]);
 
-  useEffect(() => {
-    if (postsWithForms.length > 0 && !postsWithForms.some((p) => p.id === selectedFormPostId)) {
-      setSelectedFormPostId(postsWithForms[0].id);
-    } else if (postsWithForms.length === 0) {
-      setSelectedFormPostId('');
-      setSubmissions([]);
+  const handleDeleteStory = async (videoId: string) => {
+    setDeletingVideoId(videoId);
+    try {
+      await deleteChallengeVideo(videoId);
+      onNotify('Story deleted.');
+    } catch {
+      onNotify('Could not delete story.');
+    } finally {
+      setDeletingVideoId(null);
     }
-  }, [postsWithForms, selectedFormPostId]);
+  };
 
-  useEffect(() => {
-    if (!user || !selectedFormPostId) return;
-    let active = true;
-    setLoadingSubs(true);
-    void fetchPostSubmissions(selectedFormPostId, user.uid)
-      .then((rows) => {
-        if (active) setSubmissions(rows);
-      })
-      .catch(() => {
-        if (active) setSubmissions([]);
-      })
-      .finally(() => {
-        if (active) setLoadingSubs(false);
+  const handleCrownWinner = async (video: ChallengeVideo) => {
+    if (!isAdmin) return;
+    setCrowningVideoId(video.id);
+    try {
+      await saveChallengeConfig({
+        sponsorName: challengeConfig.sponsorName || 'Community',
+        prizeGhs: CHALLENGE_LIMITS.PRIZE_GHS,
+        winnerVideoId: video.id,
+        winnerName: video.authorName,
+        winnerLocation: video.authorLocation || 'Africa',
+        winnerTitle: video.title,
+        winnerThumbnailUrl: video.thumbnailUrl,
+        winnerRoundLabel: round.label,
+        winnerPrizeGhs: CHALLENGE_LIMITS.PRIZE_GHS,
       });
-    return () => {
-      active = false;
-    };
-  }, [user, selectedFormPostId]);
+      onNotify(`${video.authorName} crowned as this round's Champion!`);
+    } catch {
+      onNotify('Could not save winner selection.');
+    } finally {
+      setCrowningVideoId(null);
+    }
+  };
 
-  const metrics = useMemo(() => {
-    return myPosts.reduce(
-      (acc, p) => ({
-        posts: acc.posts + 1,
-        likes: acc.likes + p.likesCount,
-        comments: acc.comments + p.commentsCount,
-        shares: acc.shares + p.sharesCount,
-        submissions: acc.submissions + p.submissionsCount,
-      }),
-      { posts: 0, likes: 0, comments: 0, shares: 0, submissions: 0 }
-    );
-  }, [myPosts]);
-
-  const selectedFormPost = useMemo(
-    () => postsWithForms.find((p) => p.id === selectedFormPostId) || null,
-    [postsWithForms, selectedFormPostId]
-  );
-
-  const filteredSubmissions = useMemo(() => {
-    const q = subSearch.trim().toLowerCase();
-    if (!q) return submissions;
-    return submissions.filter((sub) => {
-      if (sub.submitterName.toLowerCase().includes(q)) return true;
-      return Object.values(sub.answers).some((v) => String(v).toLowerCase().includes(q));
-    });
-  }, [submissions, subSearch]);
-
-  const pendingApprovalsCount = useMemo(
-    () => allRequests.filter((r) => r.status === 'pending').length,
-    [allRequests]
-  );
-
-  const filteredApprovals = useMemo(() => {
-    if (approvalFilter === 'all') return allRequests;
-    return allRequests.filter((r) => r.status === approvalFilter);
-  }, [allRequests, approvalFilter]);
-
-  if (!authReady) {
-    return (
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-16 text-center text-sm text-[#5E5D59]">
-        Loading your workspace...
-      </div>
-    );
-  }
-
-  if (!user || !profile) {
-    return (
-      <main className="max-w-2xl mx-auto px-4 sm:px-6 py-16">
-        <div className="bg-white border border-[#E7E5E0] rounded-2xl p-8 sm:p-10 text-center space-y-5">
-          <h1 className="font-display text-2xl sm:text-3xl font-bold text-[#141413]">
-            Creator &amp; Business Dashboard
-          </h1>
-          <p className="text-sm sm:text-base text-[#5E5D59] leading-relaxed">
-            Sign in with Google to manage your public name and bio, publish announcements,
-            events, and promos, submit proof for a verified badge, inspect form responses, and
-            moderate interactions securely.
-          </p>
-          <button
-            type="button"
-            disabled={authBusy}
-            onClick={() => void signInWithGoogle()}
-            className="px-6 py-3 text-sm font-semibold text-white bg-[#0E7C5B] rounded-lg hover:bg-[#095E44] disabled:opacity-60 cursor-pointer"
-          >
-            {authBusy ? 'Signing In...' : 'Sign In with Google'}
-          </button>
-        </div>
-      </main>
-    );
-  }
-
-  const handleSaveProfile = async (e: FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSavingProfile(true);
+    if (!profile || !user) return;
+    setProfileSaving(true);
     try {
       await updateUserProfile(user.uid, {
-        displayName,
-        bio,
-        location,
+        displayName: displayName.trim() || profile.displayName,
+        bio: bio.trim(),
+        location: location.trim() || 'Africa',
         accountType,
         avatarUrl,
       });
@@ -335,59 +313,50 @@ export function DashboardView({
         ...profile,
         displayName: displayName.trim() || profile.displayName,
         bio: bio.trim(),
-        location: location.trim(),
+        location: location.trim() || 'Africa',
         accountType,
         avatarUrl,
       });
-      onNotify('Profile updated');
+      onNotify('Profile & African region saved.');
     } catch {
       onNotify('Could not save profile changes.');
     } finally {
-      setSavingProfile(false);
+      setProfileSaving(false);
     }
   };
 
-  const handleAvatarUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setUploadingAvatar(true);
     try {
-      const compressed = await compressImageFile(file, 360, 110000);
+      const compressed = await compressImageFile(file, 480, 140000);
       setAvatarUrl(compressed);
+      onNotify('Avatar image ready. Click Save Profile to publish.');
     } catch (err) {
-      onNotify(err instanceof Error ? err.message : 'Unable to process avatar image.');
-    } finally {
-      setUploadingAvatar(false);
+      onNotify(err instanceof Error ? err.message : 'Could not process image.');
     }
   };
 
-  const handleProofUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+  const handleProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setUploadingProof(true);
     try {
-      const compressed = await compressImageFile(file, 1080, 320000);
+      const compressed = await compressImageFile(file, 1000, 420000);
       setProofImageUrl(compressed);
-      onNotify('Proof image attached');
+      onNotify('Verification document attached.');
     } catch (err) {
-      onNotify(err instanceof Error ? err.message : 'Unable to process proof image.');
-    } finally {
-      setUploadingProof(false);
+      onNotify(err instanceof Error ? err.message : 'Could not process document image.');
     }
   };
 
-  const handleSubmitVerification = async (e: FormEvent) => {
+  const handleSubmitVerification = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!profile) return;
     if (!legalOrBrandName.trim() || !idReference.trim()) {
-      onNotify('Please enter your official name and verification reference.');
+      onNotify('Enter your full name / studio name and ID reference.');
       return;
     }
-    if (!proofImageUrl && !proofLink.trim()) {
-      onNotify('Please upload a proof image or provide an official verification link.');
-      return;
-    }
-
-    setSubmittingVerification(true);
+    setVerSubmitting(true);
     try {
       await submitVerificationRequest(profile, {
         legalOrBrandName,
@@ -397,1189 +366,1168 @@ export function DashboardView({
         proofLink,
         proofImageUrl,
         note: verNote,
-        proposedLabel: DEFAULT_BADGE_LABELS[verCategory],
+        proposedLabel: proposedLabel.trim() || 'Verified Storyteller',
       });
-      onNotify('Verification proof submitted for admin review');
+      onNotify('Verification application submitted for review.');
     } catch {
-      onNotify('Could not submit verification proof.');
+      onNotify('Could not submit verification request.');
     } finally {
-      setSubmittingVerification(false);
+      setVerSubmitting(false);
     }
   };
 
-  const handleAdminDecision = async (
-    req: VerificationRequest,
-    decision: 'approved' | 'rejected'
-  ) => {
+  const handleAdminDecision = async (req: VerificationRequest, decision: 'approved' | 'rejected') => {
     if (!user?.email) return;
-    const label =
-      reviewLabelMap[req.uid] ?? req.proposedLabel ?? DEFAULT_BADGE_LABELS[req.category];
-    const note = reviewNoteMap[req.uid] ?? '';
-    if (decision === 'rejected' && !note.trim()) {
-      onNotify('Please add a brief reason before rejecting.');
-      return;
-    }
-
-    setReviewBusyUid(req.uid);
+    setReviewingUid(req.uid);
     try {
-      await reviewVerificationRequest(req.uid, user.email, decision, label, note);
-      onNotify(
-        decision === 'approved'
-          ? `${req.requesterName} is now verified`
-          : `Request from ${req.requesterName} rejected`
+      await reviewVerificationRequest(
+        req.uid,
+        user.email,
+        decision,
+        adminLabels[req.uid] || req.proposedLabel || 'Verified Storyteller',
+        adminNotes[req.uid] || ''
       );
+      onNotify(`Verification ${decision} for ${req.requesterName}.`);
     } catch {
-      onNotify('Could not update verification status.');
+      onNotify('Could not update verification decision.');
     } finally {
-      setReviewBusyUid(null);
+      setReviewingUid(null);
     }
   };
 
-  const handleDeletePost = async (postId: string) => {
-    try {
-      await deletePost(postId);
-      setConfirmDeleteId(null);
-      if (moderatingPostId === postId) setModeratingPostId(null);
-      onNotify('Post permanently deleted');
-    } catch {
-      onNotify('Unable to delete post.');
-    }
-  };
+  if (!authReady) {
+    return (
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-16 text-center text-sm text-[#5E5D59]">
+        Loading Creator Studio...
+      </main>
+    );
+  }
 
-  const handleToggleFormOpen = async (post: Post) => {
-    try {
-      await togglePostFormOpen(post);
-      onNotify(post.formConfig.isOpen ? 'Form paused' : 'Form reopened for responses');
-    } catch {
-      onNotify('Could not update form status.');
-    }
-  };
+  if (!user || !profile) {
+    return (
+      <main className="max-w-xl mx-auto px-4 sm:px-6 py-16">
+        <div className="bg-white border border-[#E7E5E0] rounded-2xl p-8 text-center space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-[#ECFDF5] text-[#0E7C5B] flex items-center justify-center mx-auto">
+            <Video className="w-6 h-6" />
+          </div>
+          <h1 className="font-display text-2xl font-bold text-[#141413]">
+            Sign in to your Creator Studio
+          </h1>
+          <p className="text-sm text-[#5E5D59]">
+            Upload African story videos, track community support &amp; boosts, manage your subscriptions, and view monthly fan earnings.
+          </p>
+          <button
+            type="button"
+            disabled={authBusy}
+            onClick={() => void signInWithGoogle()}
+            className="min-h-[44px] px-5 py-2.5 rounded-xl bg-[#0E7C5B] text-white text-sm font-semibold hover:bg-[#095E44] disabled:opacity-60 cursor-pointer"
+          >
+            {authBusy ? 'Signing In...' : 'Sign In with Google'}
+          </button>
+        </div>
+      </main>
+    );
+  }
 
-  const handleToggleVisibility = async (post: Post) => {
-    try {
-      await togglePostVisibility(post);
-      onNotify(post.visibility === 'public' ? 'Post archived' : 'Post published to feed');
-    } catch {
-      onNotify('Could not update visibility.');
-    }
-  };
-
-  const handleDeleteSubmission = async (submissionId: string) => {
-    if (!selectedFormPostId) return;
-    try {
-      await deleteFormSubmission(selectedFormPostId, submissionId);
-      setSubmissions((prev) => prev.filter((s) => s.id !== submissionId));
-      onNotify('Response removed');
-    } catch {
-      onNotify('Could not remove response.');
-    }
-  };
-
-  const sidebarItems: {
-    id: DashboardTab;
-    label: string;
-    icon: typeof BarChart3;
-    badge?: number;
-  }[] = [
-    { id: 'overview', label: 'Engagements', icon: BarChart3 },
-    { id: 'posts', label: 'Manage Content', icon: FileText },
-    { id: 'responses', label: 'Form Responses', icon: ClipboardList },
-    { id: 'verification', label: 'Verification', icon: ShieldCheck },
-    ...(isAdmin
-      ? [
-          {
-            id: 'approvals' as const,
-            label: 'Approvals',
-            icon: BadgeCheck,
-            badge: pendingApprovalsCount,
-          },
-        ]
-      : []),
-    { id: 'profile', label: 'Profile & Bio', icon: UserCheck },
+  const tabs: { id: DashboardTab; label: string; count?: number }[] = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'stories', label: 'My Stories', count: myStories.length },
+    { id: 'saved', label: 'Saved', count: savedStories.length },
+    { id: 'subscriptions', label: 'Subscriptions & Earnings' },
+    { id: 'verification', label: 'Verification' },
+    ...(isAdmin ? [{ id: 'winner_admin' as const, label: 'Winner & Approvals', count: roundVideos.length }] : []),
+    { id: 'profile', label: 'Profile & Region' },
   ];
 
-  const moderatedPost = myPosts.find((p) => p.id === moderatingPostId) || null;
+  const myRegion = getAfricanRegionFromLocation(profile.location);
 
   return (
-    <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
-      <div className="flex flex-col lg:flex-row gap-8 items-start">
-        {/* Sidebar Navigation */}
-        <aside className="w-full lg:w-64 shrink-0 bg-white border border-[#E7E5E0] rounded-2xl p-4 space-y-5">
-          <div className="flex items-center gap-3 pb-4 border-b border-[#E7E5E0]">
-            {profile.avatarUrl ? (
-              <img
-                src={profile.avatarUrl}
-                alt={profile.displayName}
-                referrerPolicy="no-referrer"
-                className="w-11 h-11 rounded-full object-cover border border-[#E7E5E0] shrink-0"
-              />
-            ) : (
-              <div className="w-11 h-11 rounded-full bg-[#141413] text-white text-sm font-semibold flex items-center justify-center shrink-0">
-                {profile.displayName.slice(0, 2).toUpperCase()}
+    <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 pb-16 space-y-6">
+      {/* Studio Top Bar */}
+      <header className="bg-white border border-[#E7E5E0] rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5 min-w-0">
+          {profile.avatarUrl ? (
+            <img
+              src={profile.avatarUrl}
+              alt={profile.displayName}
+              referrerPolicy="no-referrer"
+              className="w-12 h-12 rounded-full object-cover border border-[#E7E5E0] shrink-0"
+            />
+          ) : (
+            <div className="w-12 h-12 rounded-full bg-[#141413] text-white font-bold flex items-center justify-center shrink-0">
+              {profile.displayName.charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <h1 className="font-display text-lg sm:text-xl font-bold text-[#141413] truncate">
+                {profile.displayName}
+              </h1>
+              {profile.badgeVerified && (
+                <BadgeCheck className="w-4 h-4 fill-[#0E7C5B] text-white shrink-0" />
+              )}
+              {hasProSubscription && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#FEF3C7] text-[#92400E] text-[11px] font-semibold">
+                  <Crown className="w-3 h-3" />
+                  Creator Pro
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-[#5E5D59] flex items-center gap-1.5 truncate">
+              <MapPin className="w-3.5 h-3.5 text-[#0E7C5B] shrink-0" />
+              <span>{profile.location || myRegion}</span>
+              <span aria-hidden="true">·</span>
+              <button
+                type="button"
+                onClick={() => onViewProfile(profile.uid)}
+                className="text-[#0E7C5B] font-semibold hover:underline cursor-pointer"
+              >
+                Public Profile
+              </button>
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2.5 flex-wrap shrink-0">
+          <button
+            type="button"
+            onClick={onUploadStory}
+            className="min-h-[40px] px-3.5 py-2 rounded-xl bg-[#0E7C5B] text-white text-xs font-semibold inline-flex items-center gap-1.5 hover:bg-[#095E44] cursor-pointer"
+          >
+            <Upload className="w-4 h-4" />
+            <span>Upload Story</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => void logout()}
+            className="min-h-[40px] px-3 py-2 rounded-xl border border-[#E7E5E0] bg-[#FAF9F7] text-xs font-semibold text-[#5E5D59] hover:text-[#141413] inline-flex items-center gap-1.5 cursor-pointer"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>Sign Out</span>
+          </button>
+        </div>
+      </header>
+
+      {/* Studio Tab Strip */}
+      <nav
+        aria-label="Dashboard sections"
+        className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1"
+      >
+        {tabs.map((tab) => {
+          const active = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                active
+                  ? 'bg-[#141413] text-white'
+                  : 'bg-white border border-[#E7E5E0] text-[#5E5D59] hover:text-[#141413]'
+              }`}
+            >
+              <span>{tab.label}</span>
+              {typeof tab.count === 'number' && (
+                <span className="font-mono text-[11px] opacity-80">{tab.count}</span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* TAB: OVERVIEW */}
+      {activeTab === 'overview' && (
+        <div className="space-y-6">
+          {/* 4 KPI Summary Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white border border-[#E7E5E0] rounded-2xl p-4 space-y-1">
+              <div className="flex items-center justify-between text-xs text-[#5E5D59]">
+                <span>Story Views</span>
+                <Eye className="w-4 h-4 text-[#0E7C5B]" />
               </div>
-            )}
-            <div className="min-w-0">
-              <div className="flex items-center gap-1 min-w-0">
-                <p className="text-sm font-bold text-[#141413] truncate">{profile.displayName}</p>
-                {profile.badgeVerified && (
-                  <span title={profile.verifiedLabel || 'Verified'}>
-                    <BadgeCheck className="w-4 h-4 fill-[#0E7C5B] text-white shrink-0" />
-                  </span>
-                )}
+              <p className="font-display text-2xl font-bold text-[#141413] tabular-nums">
+                {formatCompactCount(myStats.views)}
+              </p>
+              <p className="text-[11px] text-[#5E5D59]">
+                Across {myStories.length} uploaded {myStories.length === 1 ? 'story' : 'stories'}
+              </p>
+            </div>
+
+            <div className="bg-white border border-[#E7E5E0] rounded-2xl p-4 space-y-1">
+              <div className="flex items-center justify-between text-xs text-[#5E5D59]">
+                <span>Support &amp; Gifts</span>
+                <Gift className="w-4 h-4 text-[#D97706]" />
               </div>
-              <p className="text-xs text-[#5E5D59] capitalize truncate">
-                {profile.accountType} · {profile.location}
+              <p className="font-display text-2xl font-bold text-[#141413] tabular-nums">
+                {myStats.giftsCount} {myStats.giftsCount === 1 ? 'gift' : 'gifts'}
+              </p>
+              <p className="text-[11px] text-[#5E5D59]">
+                {myStats.votes} votes · {myStats.activeBoosts} active boost
+              </p>
+            </div>
+
+            <div className="bg-white border border-[#E7E5E0] rounded-2xl p-4 space-y-1">
+              <div className="flex items-center justify-between text-xs text-[#5E5D59]">
+                <span>Engagement</span>
+                <Heart className="w-4 h-4 text-[#EF4444]" />
+              </div>
+              <p className="font-display text-2xl font-bold text-[#141413] tabular-nums">
+                {formatCompactCount(myStats.likes + myStats.comments + myStats.shares)}
+              </p>
+              <p className="text-[11px] text-[#5E5D59]">
+                {myStats.likes} likes · {myStats.comments} comments · {myStats.shares} shares
+              </p>
+            </div>
+
+            <div className="bg-white border border-[#E7E5E0] rounded-2xl p-4 space-y-1">
+              <div className="flex items-center justify-between text-xs text-[#5E5D59]">
+                <span>Fan Subscribers</span>
+                <Crown className="w-4 h-4 text-[#0E7C5B]" />
+              </div>
+              <p className="font-display text-2xl font-bold text-[#0E7C5B] tabular-nums">
+                {fanSubscribers.length}
+              </p>
+              <p className="text-[11px] text-[#5E5D59]">
+                {fanSubscribers.length === 1 ? 'active fan pass' : 'active fan passes'} · {followingCount} following
               </p>
             </div>
           </div>
 
-          {onViewProfile && (
-            <button
-              type="button"
-              onClick={() => onViewProfile(user.uid)}
-              className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs font-medium text-[#141413] bg-[#FAF9F7] border border-[#E7E5E0] rounded-lg hover:border-[#0E7C5B] transition-colors cursor-pointer"
-            >
-              <span className="inline-flex items-center gap-2">
-                <Users className="w-3.5 h-3.5 text-[#0E7C5B]" />
-                <span className="tabular-nums">
-                  <strong className="font-semibold">{followersCount}</strong> followers ·{' '}
-                  <strong className="font-semibold">{followingCount}</strong> following
+          {/* Pan-African Regional Reach & Supporter Streak */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <section className="lg:col-span-2 bg-white border border-[#E7E5E0] rounded-2xl p-5 space-y-3.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Globe2 className="w-4 h-4 text-[#0E7C5B]" />
+                  <h2 className="font-display text-sm font-bold text-[#141413]">
+                    Continental Story Reach Across Africa
+                  </h2>
+                </div>
+                <span className="text-[11px] text-[#5E5D59] tabular-nums">
+                  {allVideos.length} live {allVideos.length === 1 ? 'story' : 'stories'}
                 </span>
-              </span>
-              <span className="text-[#0E7C5B] font-semibold">View</span>
-            </button>
-          )}
-
-          <nav aria-label="Dashboard sections" className="grid grid-cols-2 lg:grid-cols-1 gap-1.5">
-            {sidebarItems.map((item) => {
-              const Icon = item.icon;
-              const active = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setActiveTab(item.id)}
-                  className={`flex items-center justify-between gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap cursor-pointer ${
-                    active
-                      ? 'bg-[#141413] text-white'
-                      : 'text-[#5E5D59] hover:text-[#141413] hover:bg-[#FAF9F7]'
-                  }`}
-                >
-                  <span className="inline-flex items-center gap-2.5 min-w-0">
-                    <Icon className="w-4 h-4 shrink-0" />
-                    <span className="truncate">{item.label}</span>
-                  </span>
-                  {typeof item.badge === 'number' && item.badge > 0 && (
-                    <span className="px-1.5 py-0.5 text-[11px] font-mono font-semibold bg-[#0E7C5B] text-white rounded">
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
-
-          <div className="pt-4 border-t border-[#E7E5E0] space-y-2">
-            <button
-              type="button"
-              onClick={onCreatePost}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-[#0E7C5B] rounded-lg hover:bg-[#095E44] cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              New Post
-            </button>
-            <button
-              type="button"
-              onClick={() => void logout()}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 text-xs font-medium text-[#5E5D59] hover:text-[#141413] border border-[#E7E5E0] rounded-lg hover:bg-[#FAF9F7] cursor-pointer"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              Sign Out
-            </button>
-          </div>
-        </aside>
-
-        {/* Main Viewport */}
-        <section className="flex-1 min-w-0 w-full space-y-6">
-          {/* TAB 1: OVERVIEW & ENGAGEMENTS */}
-          {activeTab === 'overview' && (
-            <div className="space-y-6">
-              <div>
-                <h1 className="font-display text-2xl font-bold text-[#141413]">
-                  Engagement Overview
-                </h1>
-                <p className="text-sm text-[#5E5D59] mt-0.5">
-                  Real-time reach and community interactions across your posts and forms.
-                </p>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                {[
-                  { label: 'Published Posts', value: metrics.posts },
-                  { label: 'Total Likes', value: metrics.likes },
-                  { label: 'Comments & Shares', value: metrics.comments + metrics.shares },
-                  { label: 'Form Responses', value: metrics.submissions },
-                ].map((stat) => (
-                  <div
-                    key={stat.label}
-                    className="bg-white border border-[#E7E5E0] rounded-xl p-4 space-y-1"
-                  >
-                    <p className="text-xs font-medium text-[#5E5D59]">{stat.label}</p>
-                    <p className="font-mono text-2xl font-semibold text-[#141413] tabular-nums">
-                      {stat.value}
-                    </p>
+              <div className="space-y-2.5">
+                {regionalReach.map((item) => (
+                  <div key={item.region} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-medium text-[#141413]">{item.region}</span>
+                      <span className="text-[#5E5D59] tabular-nums">
+                        {item.count} {item.count === 1 ? 'story' : 'stories'} ({item.pct}%)
+                      </span>
+                    </div>
+                    <div className="h-2 rounded-full bg-[#F0EEE9] overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-[#0E7C5B] transition-all"
+                        style={{ width: `${Math.max(item.pct, item.count > 0 ? 6 : 0)}%` }}
+                      />
+                    </div>
                   </div>
                 ))}
               </div>
+            </section>
 
-              {!profile.badgeVerified && (
-                <div className="bg-white border border-[#E7E5E0] rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <p className="text-sm font-bold text-[#141413]">
-                      Get Verified on MoodSpace Africa
-                    </p>
-                    <p className="text-xs text-[#5E5D59]">
-                      Submit your Ghana Card, RGD business registration, or official social proof
-                      so people know your account is authentic.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('verification')}
-                    className="px-4 py-2 text-xs font-semibold text-white bg-[#141413] rounded-lg hover:bg-[#2C2C2A] whitespace-nowrap shrink-0 cursor-pointer"
-                  >
-                    {myVerification?.status === 'pending'
-                      ? 'View Pending Request'
-                      : 'Request Verification'}
-                  </button>
-                </div>
-              )}
-
-              <div className="bg-white border border-[#E7E5E0] rounded-2xl overflow-hidden">
-                <div className="px-5 py-4 border-b border-[#E7E5E0] flex items-center justify-between">
-                  <h2 className="font-display text-base font-bold text-[#141413]">
-                    Post Performance Breakdown
+            <section className="bg-white border border-[#E7E5E0] rounded-2xl p-5 flex flex-col justify-between gap-4">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Flame className="w-4 h-4 text-[#D97706]" />
+                  <h2 className="font-display text-sm font-bold text-[#141413]">
+                    Daily Supporter Streak
                   </h2>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('posts')}
-                    className="text-xs font-semibold text-[#0E7C5B] hover:underline cursor-pointer"
-                  >
-                    Manage All
-                  </button>
                 </div>
-
-                {postsLoading ? (
-                  <div className="p-6 text-sm text-[#5E5D59]">Loading post metrics...</div>
-                ) : myPosts.length === 0 ? (
-                  <div className="p-8 text-center space-y-3">
-                    <p className="text-sm text-[#5E5D59]">
-                      You have not published any posts yet.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={onCreatePost}
-                      className="px-4 py-2 text-xs font-semibold text-white bg-[#0E7C5B] rounded-lg hover:bg-[#095E44] cursor-pointer"
-                    >
-                      Create Your First Post
-                    </button>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="border-b border-[#E7E5E0] text-xs font-semibold text-[#5E5D59] bg-[#FAF9F7]">
-                          <th className="py-2.5 px-4">Post Title</th>
-                          <th className="py-2.5 px-3">Category</th>
-                          <th className="py-2.5 px-3 text-right">Likes</th>
-                          <th className="py-2.5 px-3 text-right">Comments</th>
-                          <th className="py-2.5 px-3 text-right">Shares</th>
-                          <th className="py-2.5 px-4 text-right">Forms</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#F0EEE9] text-sm">
-                        {myPosts.map((post) => (
-                          <tr key={post.id} className="hover:bg-[#FAF9F7]">
-                            <td className="py-3 px-4 font-medium text-[#141413] max-w-xs truncate">
-                              {post.title}
-                            </td>
-                            <td className="py-3 px-3 text-xs text-[#5E5D59] capitalize">
-                              {post.category} · {post.visibility}
-                            </td>
-                            <td className="py-3 px-3 text-right font-mono tabular-nums">
-                              {post.likesCount}
-                            </td>
-                            <td className="py-3 px-3 text-right font-mono tabular-nums">
-                              {post.commentsCount}
-                            </td>
-                            <td className="py-3 px-3 text-right font-mono tabular-nums">
-                              {post.sharesCount}
-                            </td>
-                            <td className="py-3 px-4 text-right font-mono tabular-nums">
-                              {post.hasForm ? post.submissionsCount : '—'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                <p className="font-display text-3xl font-bold text-[#141413] tabular-nums">
+                  {supporterStreak.count} {supporterStreak.count === 1 ? 'day' : 'days'}
+                </p>
+                <p className="text-xs text-[#5E5D59] leading-relaxed">
+                  Use your free daily vote on Stories each day to build your supporter streak and help pick each round’s champion.
+                </p>
               </div>
-            </div>
-          )}
-
-          {/* TAB 2: MANAGE CONTENT & INTERACTIONS */}
-          {activeTab === 'posts' && (
-            <div className="space-y-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h1 className="font-display text-2xl font-bold text-[#141413]">
-                    Manage Content &amp; Interactions
-                  </h1>
-                  <p className="text-sm text-[#5E5D59] mt-0.5">
-                    Edit posts, adjust form fields anytime, pause forms, or moderate comments.
-                  </p>
-                </div>
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={onCreatePost}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0E7C5B] rounded-lg hover:bg-[#095E44] cursor-pointer"
+                  onClick={onOpenSubscriptionsPage}
+                  className="flex-1 min-h-[38px] px-3 py-1.5 rounded-xl border border-[#E7E5E0] bg-[#FAF9F7] text-xs font-semibold text-[#141413] hover:border-[#0E7C5B] cursor-pointer"
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  Create Post
+                  Subscriptions
+                </button>
+                <button
+                  type="button"
+                  onClick={onUploadStory}
+                  className="flex-1 min-h-[38px] px-3 py-1.5 rounded-xl bg-[#0E7C5B] text-white text-xs font-semibold hover:bg-[#095E44] cursor-pointer"
+                >
+                  Post Story
                 </button>
               </div>
+            </section>
+          </div>
 
-              {myPosts.length === 0 ? (
-                <div className="bg-white border border-[#E7E5E0] rounded-2xl p-8 text-center space-y-3">
-                  <p className="text-sm text-[#5E5D59]">No posts created yet.</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {myPosts.map((post) => (
-                    <div
-                      key={post.id}
-                      className="bg-white border border-[#E7E5E0] rounded-xl p-5 space-y-3"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div className="space-y-1 min-w-0">
-                          <div className="flex flex-wrap items-center gap-2 text-xs text-[#5E5D59]">
-                            <span className="font-semibold text-[#0E7C5B] capitalize">
-                              {post.category}
-                            </span>
-                            <span aria-hidden="true">·</span>
-                            <span className="capitalize">{post.mediaFormat}</span>
-                            <span aria-hidden="true">·</span>
-                            <span className="capitalize">
-                              {post.visibility === 'public' ? 'Public' : 'Archived'}
-                            </span>
-                            <span aria-hidden="true">·</span>
-                            <span>{formatTimestamp(post.createdAt)}</span>
-                          </div>
-                          <h3 className="font-display text-lg font-bold text-[#141413]">
-                            {post.title}
-                          </h3>
-                        </div>
+          {/* Story Performance Table */}
+          <section className="bg-white border border-[#E7E5E0] rounded-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#E7E5E0] flex items-center justify-between gap-3">
+              <div>
+                <h2 className="font-display text-base font-bold text-[#141413]">
+                  Your Story Performance
+                </h2>
+                <p className="text-xs text-[#5E5D59]">
+                  Support gifts, votes, and boosts count toward winner selection.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onUploadStory}
+                className="min-h-[38px] px-3 py-1.5 rounded-xl bg-[#0E7C5B] text-white text-xs font-semibold hover:bg-[#095E44] cursor-pointer"
+              >
+                Upload Story
+              </button>
+            </div>
 
-                        <div className="flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => onEditPost(post)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-[#D4D1CA] rounded-lg text-[#141413] hover:border-[#0E7C5B] cursor-pointer"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                            Edit &amp; Adjust Form
-                          </button>
-
-                          {post.hasForm && (
-                            <button
-                              type="button"
-                              onClick={() => handleToggleFormOpen(post)}
-                              className="px-3 py-1.5 text-xs font-semibold border border-[#D4D1CA] rounded-lg text-[#141413] hover:border-[#0E7C5B] cursor-pointer"
-                            >
-                              {post.formConfig.isOpen ? 'Pause Form' : 'Reopen Form'}
-                            </button>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setModeratingPostId(moderatingPostId === post.id ? null : post.id)
-                            }
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-[#D4D1CA] rounded-lg text-[#141413] hover:border-[#0E7C5B] cursor-pointer"
-                          >
-                            <MessageSquare className="w-3.5 h-3.5" />
-                            Comments ({post.commentsCount})
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleToggleVisibility(post)}
-                            title={post.visibility === 'public' ? 'Archive post' : 'Publish post'}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium border border-[#D4D1CA] rounded-lg text-[#5E5D59] hover:text-[#141413] cursor-pointer"
-                          >
-                            {post.visibility === 'public' ? (
-                              <>
-                                <EyeOff className="w-3.5 h-3.5" />
-                                Archive
-                              </>
-                            ) : (
-                              <>
-                                <Eye className="w-3.5 h-3.5" />
-                                Publish
-                              </>
-                            )}
-                          </button>
-
-                          {confirmDeleteId === post.id ? (
-                            <div className="inline-flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => handleDeletePost(post.id)}
-                                className="px-2.5 py-1.5 text-xs font-semibold text-white bg-[#B91C1C] rounded-lg cursor-pointer"
-                              >
-                                Confirm Delete
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setConfirmDeleteId(null)}
-                                className="px-2 py-1.5 text-xs text-[#5E5D59] cursor-pointer"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteId(post.id)}
-                              aria-label="Delete post"
-                              className="p-1.5 text-[#5E5D59] hover:text-[#B91C1C] cursor-pointer"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Comment Moderation Drawer */}
-                      {moderatingPostId === post.id && moderatedPost && (
-                        <div className="pt-3 mt-3 border-t border-[#E7E5E0] space-y-2.5">
-                          <p className="text-xs font-semibold text-[#141413]">
-                            Comment Moderation
-                          </p>
-                          {postComments.length === 0 ? (
-                            <p className="text-xs text-[#5E5D59]">
-                              No comments on this post yet.
-                            </p>
-                          ) : (
-                            <div className="space-y-2">
-                              {postComments.map((cmt) => (
-                                <div
-                                  key={cmt.id}
-                                  className="flex items-start justify-between gap-3 p-2.5 bg-[#FAF9F7] rounded-lg"
-                                >
-                                  <div className="min-w-0">
-                                    <p className="text-xs font-semibold text-[#141413]">
-                                      {cmt.authorName} ·{' '}
-                                      <span className="font-normal text-[#5E5D59]">
-                                        {formatTimestamp(cmt.createdAt)}
-                                      </span>
-                                    </p>
-                                    <p className="text-sm text-[#353431] mt-0.5">{cmt.text}</p>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={async () => {
-                                      try {
-                                        await deletePostComment(moderatedPost, cmt.id);
-                                        onNotify('Comment removed');
-                                      } catch {
-                                        onNotify('Unable to remove comment.');
-                                      }
-                                    }}
-                                    className="text-xs font-semibold text-[#B91C1C] hover:underline shrink-0 cursor-pointer"
-                                  >
-                                    Remove
-                                  </button>
+            {myStories.length === 0 ? (
+              <div className="p-8 text-center space-y-2">
+                <Video className="w-8 h-8 text-[#0E7C5B] mx-auto" />
+                <p className="text-sm font-semibold text-[#141413]">No video stories uploaded yet</p>
+                <p className="text-xs text-[#5E5D59]">
+                  Upload a 30s–90s video under 15 MB to start collecting views, votes, and gifts.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#FAF9F7] border-b border-[#E7E5E0] text-[#5E5D59]">
+                    <tr>
+                      <th className="py-3 px-4 font-semibold">Story</th>
+                      <th className="py-3 px-3 font-semibold">Views</th>
+                      <th className="py-3 px-3 font-semibold">Likes / Cmts / Shares</th>
+                      <th className="py-3 px-3 font-semibold">Votes &amp; Gifts</th>
+                      <th className="py-3 px-3 font-semibold">Status</th>
+                      <th className="py-3 px-4 font-semibold text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#F0EEE9]">
+                    {myStories.map((story) => {
+                      const boosted = story.boostedUntil > now;
+                      return (
+                        <tr key={story.id} className="hover:bg-[#FAF9F7]">
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-3 min-w-[200px]">
+                              {story.thumbnailUrl ? (
+                                <img
+                                  src={story.thumbnailUrl}
+                                  alt={story.title}
+                                  className="w-10 h-12 rounded-lg object-cover border border-[#E7E5E0] shrink-0"
+                                />
+                              ) : (
+                                <div className="w-10 h-12 rounded-lg bg-[#FAF9F7] border border-[#E7E5E0] flex items-center justify-center shrink-0">
+                                  <Film className="w-4 h-4 text-[#0E7C5B]" />
                                 </div>
-                              ))}
+                              )}
+                              <div className="min-w-0">
+                                <p className="font-semibold text-[#141413] truncate max-w-[220px]">
+                                  {story.title}
+                                </p>
+                                <p className="text-[11px] text-[#5E5D59]">
+                                  {story.roundId.replace('_', ' ')} · {formatDurationSeconds(story.durationSeconds)}
+                                </p>
+                              </div>
                             </div>
-                          )}
-                        </div>
+                          </td>
+                          <td className="py-3 px-3 font-semibold tabular-nums text-[#141413]">
+                            {formatCompactCount(story.viewsCount)}
+                          </td>
+                          <td className="py-3 px-3 tabular-nums text-[#5E5D59]">
+                            {story.likesCount} / {story.commentsCount} / {story.sharesCount}
+                          </td>
+                          <td className="py-3 px-3 tabular-nums font-semibold text-[#0E7C5B]">
+                            {story.votesCount} votes · {story.giftsCount}{' '}
+                            {story.giftsCount === 1 ? 'gift' : 'gifts'}
+                          </td>
+                          <td className="py-3 px-3">
+                            {boosted ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#ECFDF5] text-[#0E7C5B] font-semibold">
+                                <Zap className="w-3 h-3" />
+                                Boosted
+                              </span>
+                            ) : (
+                              <span className="text-[#5E5D59]">Organic</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              type="button"
+                              onClick={() => onBoostVideo(story)}
+                              className="min-h-[34px] px-3 py-1 rounded-lg border border-[#E7E5E0] bg-white hover:border-[#0E7C5B] hover:text-[#0E7C5B] font-semibold cursor-pointer whitespace-nowrap"
+                            >
+                              {boosted ? 'Extend Boost' : 'Boost Story'}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+
+      {/* TAB: MY STORIES */}
+      {activeTab === 'stories' && (
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="font-display text-lg font-bold text-[#141413]">
+              My Uploaded Video Stories ({myStories.length})
+            </h2>
+            <button
+              type="button"
+              onClick={onUploadStory}
+              className="min-h-[40px] px-3.5 py-2 rounded-xl bg-[#0E7C5B] text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Upload className="w-4 h-4" />
+              <span>Upload Story</span>
+            </button>
+          </div>
+
+          {myStories.length === 0 ? (
+            <div className="bg-white border border-[#E7E5E0] rounded-2xl p-8 text-center space-y-3">
+              <Video className="w-8 h-8 text-[#0E7C5B] mx-auto" />
+              <p className="text-sm font-semibold text-[#141413]">
+                You haven’t posted a story video yet
+              </p>
+              <button
+                type="button"
+                onClick={onUploadStory}
+                className="min-h-[44px] px-4 py-2 rounded-xl bg-[#0E7C5B] text-white text-sm font-semibold cursor-pointer"
+              >
+                Upload First African Story
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {myStories.map((story) => {
+                const boosted = story.boostedUntil > now;
+                return (
+                  <article
+                    key={story.id}
+                    className="bg-white border border-[#E7E5E0] rounded-2xl p-4 flex gap-4"
+                  >
+                    <div className="w-24 aspect-[9/14] rounded-xl overflow-hidden bg-[#111827] shrink-0 flex items-center justify-center">
+                      {story.thumbnailUrl ? (
+                        <img
+                          src={story.thumbnailUrl}
+                          alt={story.title}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <Film className="w-6 h-6 text-white/60" />
                       )}
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 3: FORM RESPONSES */}
-          {activeTab === 'responses' && (
-            <div className="space-y-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h1 className="font-display text-2xl font-bold text-[#141413]">
-                    Form Responses
-                  </h1>
-                  <p className="text-sm text-[#5E5D59] mt-0.5">
-                    Review and export submissions collected from your posts. Only you can access
-                    these responses.
-                  </p>
-                </div>
-
-                {selectedFormPost && filteredSubmissions.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => downloadSubmissionsCsv(selectedFormPost, filteredSubmissions)}
-                    className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-[#141413] bg-white border border-[#D4D1CA] rounded-lg hover:border-[#0E7C5B] cursor-pointer"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    Download CSV
-                  </button>
-                )}
-              </div>
-
-              {postsWithForms.length === 0 ? (
-                <div className="bg-white border border-[#E7E5E0] rounded-2xl p-8 text-center space-y-3">
-                  <p className="text-sm text-[#5E5D59]">
-                    None of your posts have a custom form attached yet. Choose &ldquo;Add Custom
-                    Form&rdquo; when creating or editing a post to add your own questions and
-                    response formats.
-                  </p>
-                </div>
-              ) : (
-                <div className="bg-white border border-[#E7E5E0] rounded-2xl overflow-hidden">
-                  <div className="p-4 border-b border-[#E7E5E0] flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FAF9F7]">
-                    <select
-                      aria-label="Select post form"
-                      value={selectedFormPostId}
-                      onChange={(e) => setSelectedFormPostId(e.target.value)}
-                      className="px-3 py-2 text-sm font-medium bg-white border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
-                    >
-                      {postsWithForms.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.title} ({p.submissionsCount} responses)
-                        </option>
-                      ))}
-                    </select>
-
-                    <input
-                      type="search"
-                      value={subSearch}
-                      onChange={(e) => setSubSearch(e.target.value)}
-                      placeholder="Filter responses..."
-                      className="px-3 py-2 text-sm bg-white border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
-                    />
-                  </div>
-
-                  {loadingSubs ? (
-                    <div className="p-6 text-sm text-[#5E5D59]">Loading submissions...</div>
-                  ) : filteredSubmissions.length === 0 ? (
-                    <div className="p-8 text-center text-sm text-[#5E5D59]">
-                      No form responses recorded for this post yet.
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="border-b border-[#E7E5E0] text-xs font-semibold text-[#5E5D59]">
-                            <th className="py-2.5 px-4">Submitter</th>
-                            <th className="py-2.5 px-3">Date</th>
-                            {selectedFormPost?.formConfig.fields.map((field) => (
-                              <th key={field.id} className="py-2.5 px-3">
-                                {field.label}
-                              </th>
-                            ))}
-                            <th className="py-2.5 px-4 text-right">Action</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[#F0EEE9] text-sm">
-                          {filteredSubmissions.map((sub) => (
-                            <tr key={sub.id} className="hover:bg-[#FAF9F7]">
-                              <td className="py-3 px-4 font-medium text-[#141413] whitespace-nowrap">
-                                {sub.submitterName}
-                              </td>
-                              <td className="py-3 px-3 text-xs text-[#5E5D59] font-mono tabular-nums whitespace-nowrap">
-                                {formatFullDate(sub.createdAt)}
-                              </td>
-                              {selectedFormPost?.formConfig.fields.map((field) => {
-                                const ans = sub.answers[field.id];
-                                const display =
-                                  typeof ans === 'boolean'
-                                    ? ans
-                                      ? 'Yes'
-                                      : 'No'
-                                    : String(ans || '—');
-                                return (
-                                  <td key={field.id} className="py-3 px-3 text-[#353431]">
-                                    {display}
-                                  </td>
-                                );
-                              })}
-                              <td className="py-3 px-4 text-right">
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteSubmission(sub.id)}
-                                  className="text-xs font-semibold text-[#B91C1C] hover:underline cursor-pointer"
-                                >
-                                  Delete
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 4: IDENTITY VERIFICATION REQUEST */}
-          {activeTab === 'verification' && (
-            <div className="bg-white border border-[#E7E5E0] rounded-2xl p-6 space-y-6">
-              <div>
-                <h1 className="font-display text-2xl font-bold text-[#141413]">
-                  Identity &amp; Brand Verification
-                </h1>
-                <p className="text-sm text-[#5E5D59] mt-0.5">
-                  Prove you are a real creator, business, or event organizer. Your proof is kept
-                  private and reviewed only by the MoodSpace Africa administrator.
-                </p>
-              </div>
-
-              {/* Status Banner */}
-              {profile.badgeVerified ? (
-                <div className="p-4 rounded-xl border border-[#0E7C5B]/30 bg-[#0E7C5B]/5 flex items-start gap-3">
-                  <BadgeCheck className="w-5 h-5 fill-[#0E7C5B] text-white shrink-0 mt-0.5" />
-                  <div className="space-y-1">
-                    <p className="text-sm font-bold text-[#141413]">
-                      Account Verified · {profile.verifiedLabel || 'Verified'}
-                    </p>
-                    <p className="text-xs text-[#353431]">
-                      Your verified badge appears next to your name across all your posts and
-                      comments.
-                    </p>
-                  </div>
-                </div>
-              ) : myVerification?.status === 'pending' ? (
-                <div className="p-4 rounded-xl border border-[#C87A19]/40 bg-[#C87A19]/5 flex items-start gap-3">
-                  <Clock className="w-5 h-5 text-[#C87A19] shrink-0 mt-0.5" />
-                  <div className="space-y-1">
-                    <p className="text-sm font-bold text-[#141413]">Verification Pending Review</p>
-                    <p className="text-xs text-[#353431]">
-                      Submitted {formatTimestamp(myVerification.updatedAt)}. You can update your
-                      submitted proof below if needed before approval.
-                    </p>
-                  </div>
-                </div>
-              ) : myVerification?.status === 'rejected' ? (
-                <div className="p-4 rounded-xl border border-red-200 bg-red-50 flex items-start gap-3">
-                  <XCircle className="w-5 h-5 text-[#B91C1C] shrink-0 mt-0.5" />
-                  <div className="space-y-1">
-                    <p className="text-sm font-bold text-[#B91C1C]">
-                      Verification Needs Attention
-                    </p>
-                    <p className="text-xs text-[#353431]">
-                      {myVerification.reviewNote ||
-                        'Please upload clearer proof or provide an official reference and resubmit.'}
-                    </p>
-                  </div>
-                </div>
-              ) : null}
-
-              <form onSubmit={handleSubmitVerification} className="space-y-5 max-w-xl">
-                <div>
-                  <label className="block text-xs font-semibold text-[#5E5D59] mb-1">
-                    Official Full Name or Registered Brand / Business Name
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={SCHEMA_LIMITS.VERIFICATION_LEGAL_NAME_MAX}
-                    value={legalOrBrandName}
-                    onChange={(e) => setLegalOrBrandName(e.target.value)}
-                    placeholder="e.g. Kwame Mensah or EchoHouse Ghana Ltd"
-                    className="w-full px-3.5 py-2 text-sm border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#5E5D59] mb-1">
-                      Verification Badge Category
-                    </label>
-                    <select
-                      value={verCategory}
-                      onChange={(e) => setVerCategory(e.target.value as VerificationCategory)}
-                      className="w-full px-3.5 py-2 text-sm bg-white border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
-                    >
-                      <option value="creator">Verified Creator</option>
-                      <option value="business">Verified Business</option>
-                      <option value="organizer">Verified Organizer</option>
-                      <option value="media">Verified Media</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-[#5E5D59] mb-1">
-                      Proof Type
-                    </label>
-                    <select
-                      value={idType}
-                      onChange={(e) => setIdType(e.target.value as VerificationIdType)}
-                      className="w-full px-3.5 py-2 text-sm bg-white border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
-                    >
-                      <option value="ghana_card">Ghana Card / National ID</option>
-                      <option value="business_reg">Business Registration (RGD)</option>
-                      <option value="social_handle">Official Social Media Handle</option>
-                      <option value="website_press">Official Website / Press</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-[#5E5D59] mb-1">
-                    ID Reference, Registration Number, or Official Handle
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={SCHEMA_LIMITS.VERIFICATION_REF_MAX}
-                    value={idReference}
-                    onChange={(e) => setIdReference(e.target.value)}
-                    placeholder="e.g. GHA-7284XXXX-1, RGD BN-40219, or @yourbrandgh"
-                    className="w-full px-3.5 py-2 text-sm border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-[#5E5D59] mb-1">
-                    Official Link (Instagram, X, LinkedIn, or Business Website)
-                  </label>
-                  <input
-                    type="url"
-                    maxLength={SCHEMA_LIMITS.VERIFICATION_LINK_MAX}
-                    value={proofLink}
-                    onChange={(e) => setProofLink(e.target.value)}
-                    placeholder="https://instagram.com/yourhandle"
-                    className="w-full px-3.5 py-2 text-sm border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-xs font-semibold text-[#5E5D59]">
-                    Upload Proof Photo (ID selfie, business certificate, or account proof)
-                  </label>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <label className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-[#141413] bg-[#FAF9F7] border border-[#D4D1CA] rounded-lg hover:border-[#0E7C5B] cursor-pointer">
-                      <ImagePlus className="w-3.5 h-3.5" />
-                      {uploadingProof ? 'Compressing...' : proofImageUrl ? 'Replace Proof Photo' : 'Upload Proof Photo'}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleProofUpload}
-                        className="hidden"
-                      />
-                    </label>
-                    {proofImageUrl && (
-                      <button
-                        type="button"
-                        onClick={() => setProofImageUrl('')}
-                        className="text-xs text-[#B91C1C] hover:underline cursor-pointer"
-                      >
-                        Remove photo
-                      </button>
-                    )}
-                  </div>
-                  {proofImageUrl && (
-                    <div className="rounded-xl overflow-hidden border border-[#E7E5E0] bg-[#FAF9F7] max-w-sm">
-                      <img
-                        src={proofImageUrl}
-                        alt="Uploaded verification proof preview"
-                        className="w-full max-h-56 object-contain"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-[#5E5D59] mb-1">
-                    Additional Notes for Reviewer
-                  </label>
-                  <textarea
-                    rows={3}
-                    maxLength={SCHEMA_LIMITS.VERIFICATION_NOTE_MAX}
-                    value={verNote}
-                    onChange={(e) => setVerNote(e.target.value)}
-                    placeholder="Share any context that confirms you represent this creator profile or Ghana/African business..."
-                    className="w-full px-3.5 py-2 text-sm border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={submittingVerification || uploadingProof}
-                  className="px-5 py-2.5 text-sm font-semibold text-white bg-[#0E7C5B] rounded-lg hover:bg-[#095E44] disabled:opacity-60 cursor-pointer"
-                >
-                  {submittingVerification
-                    ? 'Submitting Proof...'
-                    : myVerification
-                      ? 'Update & Resubmit Proof'
-                      : 'Submit Proof for Verification'}
-                </button>
-              </form>
-            </div>
-          )}
-
-          {/* TAB 5: ADMIN VERIFICATION APPROVALS */}
-          {activeTab === 'approvals' && isAdmin && (
-            <div className="space-y-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h1 className="font-display text-2xl font-bold text-[#141413]">
-                    Verification Approvals
-                  </h1>
-                  <p className="text-sm text-[#5E5D59] mt-0.5">
-                    Inspect submitted creator &amp; business proof and grant or reject verified
-                    badges.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-1 p-1 bg-white border border-[#E7E5E0] rounded-lg">
-                  {(
-                    [
-                      { id: 'pending', label: `Pending (${pendingApprovalsCount})` },
-                      { id: 'approved', label: 'Approved' },
-                      { id: 'rejected', label: 'Rejected' },
-                      { id: 'all', label: 'All' },
-                    ] as const
-                  ).map((f) => (
-                    <button
-                      key={f.id}
-                      type="button"
-                      onClick={() => setApprovalFilter(f.id)}
-                      className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap cursor-pointer ${
-                        approvalFilter === f.id
-                          ? 'bg-[#141413] text-white'
-                          : 'text-[#5E5D59] hover:text-[#141413]'
-                      }`}
-                    >
-                      {f.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {filteredApprovals.length === 0 ? (
-                <div className="bg-white border border-[#E7E5E0] rounded-2xl p-8 text-center text-sm text-[#5E5D59]">
-                  No verification requests in this filter.
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {filteredApprovals.map((req) => {
-                    const labelValue =
-                      reviewLabelMap[req.uid] ??
-                      req.proposedLabel ??
-                      DEFAULT_BADGE_LABELS[req.category];
-                    const noteValue = reviewNoteMap[req.uid] ?? req.reviewNote ?? '';
-                    const isBusy = reviewBusyUid === req.uid;
-
-                    return (
-                      <div
-                        key={req.uid}
-                        className="bg-white border border-[#E7E5E0] rounded-2xl p-5 sm:p-6 space-y-4"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-[#F0EEE9]">
-                          <div className="space-y-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <h3 className="font-display text-lg font-bold text-[#141413]">
-                                {req.requesterName}
-                              </h3>
-                              <span className="text-xs text-[#5E5D59]">
-                                · {req.requesterLocation || 'Ghana'} ·{' '}
-                                <span className="capitalize">{req.accountType}</span>
-                              </span>
-                            </div>
-                            <p className="text-xs text-[#5E5D59]">
-                              Legal / Brand:{' '}
-                              <strong className="text-[#141413]">{req.legalOrBrandName}</strong> ·{' '}
-                              {ID_TYPE_LABELS[req.idType]}:{' '}
-                              <code className="font-mono text-[#141413] bg-[#FAF9F7] px-1.5 py-0.5 rounded border border-[#E7E5E0]">
-                                {req.idReference}
-                              </code>
-                            </p>
-                          </div>
-
-                          <div className="inline-flex items-center gap-1.5 text-xs font-semibold capitalize">
-                            {req.status === 'approved' ? (
-                              <span className="inline-flex items-center gap-1 text-[#0E7C5B]">
-                                <CheckCircle2 className="w-4 h-4" />
-                                Approved
-                              </span>
-                            ) : req.status === 'rejected' ? (
-                              <span className="inline-flex items-center gap-1 text-[#B91C1C]">
-                                <XCircle className="w-4 h-4" />
-                                Rejected
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-[#C87A19]">
-                                <Clock className="w-4 h-4" />
-                                Pending Review
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {req.note && (
-                          <p className="text-sm text-[#353431] bg-[#FAF9F7] p-3 rounded-lg border border-[#F0EEE9]">
-                            {req.note}
-                          </p>
-                        )}
-
-                        {req.proofLink && (
-                          <p className="text-xs">
-                            <span className="text-[#5E5D59] font-medium">Proof Link: </span>
-                            <a
-                              href={req.proofLink}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-[#0E7C5B] font-semibold hover:underline break-all"
-                            >
-                              {req.proofLink}
-                              <ExternalLink className="w-3 h-3 shrink-0" />
-                            </a>
-                          </p>
-                        )}
-
-                        {req.proofImageUrl && (
-                          <div className="rounded-xl overflow-hidden border border-[#E7E5E0] bg-[#FAF9F7] max-w-md">
-                            <img
-                              src={req.proofImageUrl}
-                              alt={`Submitted verification proof from ${req.requesterName}`}
-                              className="w-full max-h-72 object-contain"
-                            />
-                          </div>
-                        )}
-
-                        <div className="pt-3 border-t border-[#E7E5E0] grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs font-semibold text-[#5E5D59] mb-1">
-                              Verified Badge Label
-                            </label>
-                            <input
-                              type="text"
-                              maxLength={SCHEMA_LIMITS.VERIFICATION_LABEL_MAX}
-                              value={labelValue}
-                              onChange={(e) =>
-                                setReviewLabelMap((prev) => ({
-                                  ...prev,
-                                  [req.uid]: e.target.value,
-                                }))
-                              }
-                              className="w-full px-3 py-2 text-xs border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-semibold text-[#5E5D59] mb-1">
-                              Reviewer Note (shown if rejected)
-                            </label>
-                            <input
-                              type="text"
-                              maxLength={SCHEMA_LIMITS.VERIFICATION_REVIEW_NOTE_MAX}
-                              value={noteValue}
-                              onChange={(e) =>
-                                setReviewNoteMap((prev) => ({
-                                  ...prev,
-                                  [req.uid]: e.target.value,
-                                }))
-                              }
-                              placeholder="Optional note or reason..."
-                              className="w-full px-3 py-2 text-xs border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-2.5">
+                    <div className="flex-1 min-w-0 flex flex-col justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <h3 className="font-display text-sm font-bold text-[#141413] line-clamp-2">
+                            {story.title}
+                          </h3>
                           <button
                             type="button"
-                            disabled={isBusy}
-                            onClick={() => void handleAdminDecision(req, 'approved')}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#0E7C5B] rounded-lg hover:bg-[#095E44] disabled:opacity-60 cursor-pointer"
+                            disabled={deletingVideoId === story.id}
+                            onClick={() => void handleDeleteStory(story.id)}
+                            aria-label="Delete story"
+                            className="p-1.5 text-[#5E5D59] hover:text-[#B91C1C] cursor-pointer shrink-0"
                           >
-                            <BadgeCheck className="w-4 h-4" />
-                            {req.status === 'approved' ? 'Update Badge' : 'Approve & Verify'}
+                            <Trash2 className="w-4 h-4" />
                           </button>
-
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => void handleAdminDecision(req, 'rejected')}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-[#B91C1C] bg-white border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-60 cursor-pointer"
-                          >
-                            <XCircle className="w-4 h-4" />
-                            {req.status === 'approved' ? 'Revoke Badge' : 'Reject'}
-                          </button>
+                        </div>
+                        <p className="text-[11px] text-[#5E5D59]">
+                          {story.roundId.replace('_', ' ')} · {formatTimestamp(story.createdAt)}
+                        </p>
+                        <div className="flex flex-wrap gap-3 pt-1 text-xs text-[#3F3E3B] tabular-nums">
+                          <span>{formatCompactCount(story.viewsCount)} views</span>
+                          <span>{story.votesCount} votes</span>
+                          <span className="text-[#0E7C5B] font-semibold">
+                            {story.giftsCount} {story.giftsCount === 1 ? 'gift' : 'gifts'}
+                          </span>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
 
-          {/* TAB 6: PROFILE & BIO */}
-          {activeTab === 'profile' && (
-            <div className="bg-white border border-[#E7E5E0] rounded-2xl p-6 space-y-6">
-              <div>
-                <h1 className="font-display text-2xl font-bold text-[#141413]">
-                  Profile &amp; Bio Settings
-                </h1>
-                <p className="text-sm text-[#5E5D59] mt-0.5">
-                  Your public name, location, and bio appear on every post you publish. Your email (
-                  {user.email}) remains private.
-                </p>
-              </div>
-
-              <form onSubmit={handleSaveProfile} className="space-y-5 max-w-xl">
-                <div className="flex items-center gap-4">
-                  {avatarUrl ? (
-                    <img
-                      src={avatarUrl}
-                      alt={displayName}
-                      referrerPolicy="no-referrer"
-                      className="w-16 h-16 rounded-full object-cover border border-[#E7E5E0]"
-                    />
-                  ) : (
-                    <div className="w-16 h-16 rounded-full bg-[#141413] text-white text-lg font-semibold flex items-center justify-center">
-                      {displayName.slice(0, 2).toUpperCase() || 'MS'}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onJumpToStory(story.id)}
+                          className="flex-1 min-h-[38px] px-3 py-1.5 rounded-xl border border-[#E7E5E0] bg-[#FAF9F7] text-xs font-semibold text-[#141413] cursor-pointer"
+                        >
+                          View in Feed
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onBoostVideo(story)}
+                          className="flex-1 min-h-[38px] px-3 py-1.5 rounded-xl bg-[#0E7C5B] text-white text-xs font-semibold inline-flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <Zap className="w-3.5 h-3.5" />
+                          <span>{boosted ? 'Boosted' : 'Boost Story'}</span>
+                        </button>
+                      </div>
                     </div>
-                  )}
-
-                  <label className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-semibold text-[#141413] bg-[#FAF9F7] border border-[#D4D1CA] rounded-lg hover:border-[#0E7C5B] cursor-pointer">
-                    <ImagePlus className="w-3.5 h-3.5" />
-                    {uploadingAvatar ? 'Uploading...' : 'Change Photo'}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleAvatarUpload}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-[#5E5D59] mb-1">
-                    Display Name or Business Name
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={SCHEMA_LIMITS.DISPLAY_NAME_MAX}
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    className="w-full px-3.5 py-2 text-sm border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#5E5D59] mb-1">
-                      Account Role
-                    </label>
-                    <select
-                      value={accountType}
-                      onChange={(e) => setAccountType(e.target.value as AccountType)}
-                      className="w-full px-3.5 py-2 text-sm bg-white border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
-                    >
-                      <option value="creator">Creator</option>
-                      <option value="business">Business</option>
-                      <option value="community">Community Organizer</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-[#5E5D59] mb-1">
-                      Location (Ghana First)
-                    </label>
-                    <select
-                      aria-label="Select city and country"
-                      value={
-                        (AFRICAN_CITIES as readonly string[]).includes(location)
-                          ? location
-                          : '__custom__'
-                      }
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val === '__custom__') {
-                          setLocation('');
-                        } else {
-                          setLocation(val);
-                        }
-                      }}
-                      className="w-full px-3.5 py-2 text-sm bg-white border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
-                    >
-                      <optgroup label="Ghana">
-                        {AFRICAN_CITIES.filter((c) => c.endsWith('Ghana')).map((city) => (
-                          <option key={city} value={city}>
-                            {city}
-                          </option>
-                        ))}
-                      </optgroup>
-                      <optgroup label="Other African Countries">
-                        {AFRICAN_CITIES.filter((c) => !c.endsWith('Ghana')).map((city) => (
-                          <option key={city} value={city}>
-                            {city}
-                          </option>
-                        ))}
-                      </optgroup>
-                      <option value="__custom__">Other city / custom location...</option>
-                    </select>
-                    {!(AFRICAN_CITIES as readonly string[]).includes(location) && (
-                      <input
-                        type="text"
-                        maxLength={SCHEMA_LIMITS.LOCATION_MAX}
-                        value={location}
-                        onChange={(e) => setLocation(e.target.value)}
-                        placeholder="e.g. East Legon, Accra, Ghana"
-                        className="mt-2 w-full px-3.5 py-2 text-sm border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
-                      />
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-semibold text-[#5E5D59]">Bio</label>
-                    <span className="text-[11px] font-mono text-[#5E5D59] tabular-nums">
-                      {bio.length}/{SCHEMA_LIMITS.BIO_MAX}
-                    </span>
-                  </div>
-                  <textarea
-                    rows={4}
-                    maxLength={SCHEMA_LIMITS.BIO_MAX}
-                    value={bio}
-                    onChange={(e) => setBio(e.target.value)}
-                    placeholder="Tell people what you create, host, or offer in Ghana and across Africa..."
-                    className="w-full px-3.5 py-2 text-sm border border-[#D4D1CA] rounded-lg focus:outline-none focus:border-[#0E7C5B]"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={savingProfile || uploadingAvatar}
-                  className="px-5 py-2.5 text-sm font-semibold text-white bg-[#0E7C5B] rounded-lg hover:bg-[#095E44] disabled:opacity-60 cursor-pointer"
-                >
-                  {savingProfile ? 'Saving...' : 'Save Profile'}
-                </button>
-              </form>
+                  </article>
+                );
+              })}
             </div>
           )}
         </section>
-      </div>
+      )}
+
+      {/* TAB: SAVED STORIES */}
+      {activeTab === 'saved' && (
+        <section className="space-y-4">
+          <h2 className="font-display text-lg font-bold text-[#141413]">
+            Saved African Stories ({savedStories.length})
+          </h2>
+          {savedStories.length === 0 ? (
+            <div className="bg-white border border-[#E7E5E0] rounded-2xl p-8 text-center space-y-2">
+              <Bookmark className="w-7 h-7 text-[#0E7C5B] mx-auto" />
+              <p className="text-sm font-semibold text-[#141413]">No saved stories yet</p>
+              <p className="text-xs text-[#5E5D59]">
+                Tap the bookmark icon on any story video in the feed to save it here.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {savedStories.map((story) => (
+                <article
+                  key={story.id}
+                  className="bg-white border border-[#E7E5E0] rounded-2xl overflow-hidden flex flex-col"
+                >
+                  <div className="relative aspect-[16/10] bg-[#111827] flex items-center justify-center">
+                    {story.thumbnailUrl ? (
+                      <img
+                        src={story.thumbnailUrl}
+                        alt={story.title}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <Film className="w-7 h-7 text-white/60" />
+                    )}
+                  </div>
+                  <div className="p-4 flex-1 flex flex-col justify-between gap-3">
+                    <div>
+                      <h3 className="font-display text-sm font-bold text-[#141413] line-clamp-2">
+                        {story.title}
+                      </h3>
+                      <p className="text-xs text-[#5E5D59] mt-0.5">
+                        {story.authorName} · {story.authorLocation || 'Africa'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 pt-2 border-t border-[#F0EEE9]">
+                      <button
+                        type="button"
+                        onClick={() => onJumpToStory(story.id)}
+                        className="flex-1 min-h-[38px] px-3 py-1.5 rounded-xl bg-[#0E7C5B] text-white text-xs font-semibold cursor-pointer"
+                      >
+                        Watch Story
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onToggleSaved(story.id)}
+                        className="min-h-[38px] px-3 py-1.5 rounded-xl border border-[#E7E5E0] bg-[#FAF9F7] text-xs font-semibold text-[#5E5D59] hover:text-[#B91C1C] cursor-pointer"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* TAB: SUBSCRIPTIONS & EARNINGS */}
+      {activeTab === 'subscriptions' && (
+        <div className="space-y-6">
+          {/* Creator Pro Status */}
+          <section className="bg-white border border-[#E7E5E0] rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Crown className="w-5 h-5 text-[#D97706]" />
+                <h2 className="font-display text-base font-bold text-[#141413]">
+                  MoodSpace Creator Pro
+                </h2>
+              </div>
+              <p className="text-xs text-[#5E5D59]">
+                {hasProSubscription
+                  ? 'Your Creator Pro badge and audience analytics are active.'
+                  : 'Unlock your Creator Pro badge, priority placement, and audience insights.'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2.5 shrink-0">
+              {!hasProSubscription && (
+                <button
+                  type="button"
+                  onClick={onUpgradePro}
+                  className="min-h-[40px] px-4 py-2 rounded-xl bg-[#0E7C5B] text-white text-xs font-semibold hover:bg-[#095E44] cursor-pointer"
+                >
+                  Upgrade to Pro
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onOpenSubscriptionsPage}
+                className="min-h-[40px] px-3.5 py-2 rounded-xl border border-[#E7E5E0] bg-[#FAF9F7] text-xs font-semibold text-[#141413] cursor-pointer"
+              >
+                Explore Creators
+              </button>
+            </div>
+          </section>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Fans Supporting You */}
+            <section className="bg-white border border-[#E7E5E0] rounded-2xl p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-[#E7E5E0] pb-3">
+                <div>
+                  <h3 className="font-display text-base font-bold text-[#141413]">
+                    Fans Subscribed to You ({fanSubscribers.length})
+                  </h3>
+                  <p className="text-xs text-[#5E5D59]">
+                    Active monthly Fan Pass supporters
+                  </p>
+                </div>
+                <Users className="w-5 h-5 text-[#0E7C5B]" />
+              </div>
+
+              {fanSubscribers.length === 0 ? (
+                <p className="text-xs text-[#5E5D59] py-6 text-center">
+                  Share your African stories so viewers can subscribe to your monthly Fan Pass.
+                </p>
+              ) : (
+                <ul className="divide-y divide-[#F0EEE9]">
+                  {fanSubscribers.map((sub) => (
+                    <li key={sub.id} className="py-3 flex items-center justify-between gap-3 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => onViewProfile(sub.subscriberId)}
+                        className="font-semibold text-[#141413] hover:text-[#0E7C5B] truncate cursor-pointer"
+                      >
+                        {sub.subscriberName}
+                      </button>
+                      <span className="text-[#0E7C5B] font-bold tabular-nums shrink-0">
+                        +Fan Pass · {sub.provider}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            {/* Your Active Memberships */}
+            <section className="bg-white border border-[#E7E5E0] rounded-2xl p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-[#E7E5E0] pb-3">
+                <div>
+                  <h3 className="font-display text-base font-bold text-[#141413]">
+                    Your Active Memberships ({activeMySubs.length})
+                  </h3>
+                  <p className="text-xs text-[#5E5D59]">Creators &amp; plans you support monthly</p>
+                </div>
+                <Crown className="w-5 h-5 text-[#D97706]" />
+              </div>
+
+              {activeMySubs.length === 0 ? (
+                <div className="py-6 text-center space-y-2.5">
+                  <p className="text-xs text-[#5E5D59]">
+                    You have no active monthly subscriptions yet.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={onOpenSubscriptionsPage}
+                    className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-[#0E7C5B] text-white text-xs font-semibold cursor-pointer"
+                  >
+                    Browse African Storytellers
+                  </button>
+                </div>
+              ) : (
+                <ul className="divide-y divide-[#F0EEE9]">
+                  {activeMySubs.map((sub) => (
+                    <li key={sub.id} className="py-3 flex items-center justify-between gap-3 text-xs">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-[#141413] truncate">{sub.targetName}</p>
+                        <p className="text-[11px] text-[#5E5D59]">
+                          {sub.planType === 'creator_pro' ? 'Creator Pro' : 'Fan Pass'} via {sub.provider}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={cancellingSubId === sub.id}
+                        onClick={() => {
+                          setCancellingSubId(sub.id);
+                          void onCancelSubscription(sub.id).finally(() =>
+                            setCancellingSubId(null)
+                          );
+                        }}
+                        className="text-xs font-semibold text-[#5E5D59] hover:text-[#B91C1C] cursor-pointer shrink-0"
+                      >
+                        {cancellingSubId === sub.id ? 'Cancelling...' : 'Cancel'}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: VERIFICATION */}
+      {activeTab === 'verification' && (
+        <section className="bg-white border border-[#E7E5E0] rounded-2xl p-5 sm:p-6 space-y-5 max-w-2xl">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="font-display text-lg font-bold text-[#141413]">
+                Creator Verification Across Africa
+              </h2>
+              <p className="text-xs text-[#5E5D59]">
+                Earn a verified badge on your African stories and public storyteller profile.
+              </p>
+            </div>
+            <ShieldCheck className="w-6 h-6 text-[#0E7C5B] shrink-0" />
+          </div>
+
+          {myVerification && (
+            <div className="bg-[#FAF9F7] border border-[#E7E5E0] rounded-xl p-4 space-y-1 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-[#141413]">Current Application Status</span>
+                <span
+                  className={`px-2 py-0.5 rounded font-semibold uppercase ${
+                    myVerification.status === 'approved'
+                      ? 'bg-[#ECFDF5] text-[#0E7C5B]'
+                      : myVerification.status === 'rejected'
+                        ? 'bg-[#FEF2F2] text-[#B91C1C]'
+                        : 'bg-[#FEF3C7] text-[#92400E]'
+                  }`}
+                >
+                  {myVerification.status}
+                </span>
+              </div>
+              {myVerification.reviewNote && (
+                <p className="text-[#5E5D59]">Review note: {myVerification.reviewNote}</p>
+              )}
+            </div>
+          )}
+
+          <form onSubmit={(e) => void handleSubmitVerification(e)} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-[#141413]">
+                  Legal Name or Studio Name
+                </label>
+                <input
+                  type="text"
+                  value={legalOrBrandName}
+                  onChange={(e) => setLegalOrBrandName(e.target.value)}
+                  placeholder="Full name or collective"
+                  className="w-full min-h-[42px] px-3 py-2 bg-white border border-[#E7E5E0] rounded-xl text-sm text-[#141413] focus:outline-none focus:border-[#0E7C5B]"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-[#141413]">
+                  Storyteller Category
+                </label>
+                <select
+                  value={verCategory}
+                  onChange={(e) => setVerCategory(e.target.value as VerificationCategory)}
+                  className="w-full min-h-[42px] px-3 py-2 bg-white border border-[#E7E5E0] rounded-xl text-sm text-[#141413] focus:outline-none focus:border-[#0E7C5B]"
+                >
+                  <option value="creator">Independent Storyteller</option>
+                  <option value="media">Media / Film Studio</option>
+                  <option value="organizer">Cultural Collective</option>
+                  <option value="business">Creative Brand</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-[#141413]">
+                  Verification Document Type
+                </label>
+                <select
+                  value={idType}
+                  onChange={(e) => setIdType(e.target.value as VerificationIdType)}
+                  className="w-full min-h-[42px] px-3 py-2 bg-white border border-[#E7E5E0] rounded-xl text-sm text-[#141413] focus:outline-none focus:border-[#0E7C5B]"
+                >
+                  <option value="ghana_card">National ID / Passport</option>
+                  <option value="social_handle">Verified Social Channel</option>
+                  <option value="business_reg">Studio Registration</option>
+                  <option value="website_press">Press / Portfolio Site</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-[#141413]">
+                  ID / Handle Reference
+                </label>
+                <input
+                  type="text"
+                  value={idReference}
+                  onChange={(e) => setIdReference(e.target.value)}
+                  placeholder="e.g. @handle or ID last 4 digits"
+                  className="w-full min-h-[42px] px-3 py-2 bg-white border border-[#E7E5E0] rounded-xl text-sm text-[#141413] focus:outline-none focus:border-[#0E7C5B]"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-[#141413]">
+                  Badge Label
+                </label>
+                <input
+                  type="text"
+                  value={proposedLabel}
+                  onChange={(e) => setProposedLabel(e.target.value)}
+                  placeholder="Verified Storyteller"
+                  className="w-full min-h-[42px] px-3 py-2 bg-white border border-[#E7E5E0] rounded-xl text-sm text-[#141413] focus:outline-none focus:border-[#0E7C5B]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-[#141413]">
+                  Proof Link (Optional)
+                </label>
+                <input
+                  type="url"
+                  value={proofLink}
+                  onChange={(e) => setProofLink(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full min-h-[42px] px-3 py-2 bg-white border border-[#E7E5E0] rounded-xl text-sm text-[#141413] focus:outline-none focus:border-[#0E7C5B]"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-[#141413]">
+                Supporting Image (Optional)
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => void handleProofUpload(e)}
+                className="text-xs text-[#5E5D59]"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={verSubmitting}
+              className="min-h-[44px] px-5 py-2.5 rounded-xl bg-[#0E7C5B] text-white text-sm font-semibold hover:bg-[#095E44] disabled:opacity-50 cursor-pointer"
+            >
+              {verSubmitting ? 'Submitting...' : 'Submit Verification Request'}
+            </button>
+          </form>
+        </section>
+      )}
+
+      {/* TAB: ADMIN WINNER PICKER & APPROVALS */}
+      {activeTab === 'winner_admin' && isAdmin && (
+        <div className="space-y-6">
+          {/* Round Winner Picker Based on Support + Boosts */}
+          <section className="bg-white border border-[#E7E5E0] rounded-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#E7E5E0] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Trophy className="w-5 h-5 text-[#D97706]" />
+                  <h2 className="font-display text-base font-bold text-[#141413]">
+                    {round.label} Winner Selection (Support &amp; Boost Rankings)
+                  </h2>
+                </div>
+                <p className="text-xs text-[#5E5D59] mt-0.5">
+                  Current winner spotlight: {challengeConfig.winnerName} ({challengeConfig.winnerRoundLabel})
+                </p>
+              </div>
+              <span className="text-xs font-semibold text-[#0E7C5B] bg-[#ECFDF5] border border-[#A7F3D0] px-3 py-1.5 rounded-lg">
+                Round Champion Pick
+              </span>
+            </div>
+
+            {adminSortedRoundStories.length === 0 ? (
+              <p className="p-8 text-center text-sm text-[#5E5D59]">
+                No video stories uploaded yet in {round.label}.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#FAF9F7] border-b border-[#E7E5E0] text-[#5E5D59]">
+                    <tr>
+                      <th className="py-3 px-4 font-semibold">Rank &amp; Storyteller</th>
+                      <th className="py-3 px-3 font-semibold">Gifts &amp; Votes</th>
+                      <th className="py-3 px-3 font-semibold">Boost</th>
+                      <th className="py-3 px-3 font-semibold">Views / Likes / Cmts / Shares</th>
+                      <th className="py-3 px-3 font-semibold">Support Score</th>
+                      <th className="py-3 px-4 font-semibold text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#F0EEE9]">
+                    {adminSortedRoundStories.map((v, idx) => {
+                      const isWinner = challengeConfig.winnerVideoId === v.id;
+                      const isBoosted = v.boostedUntil > now;
+                      const score = computeCreatorSupportScore(v, now);
+                      return (
+                        <tr key={v.id} className="hover:bg-[#FAF9F7]">
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-2.5 min-w-[200px]">
+                              <span className="font-mono font-bold text-[#0E7C5B] w-6">
+                                #{idx + 1}
+                              </span>
+                              <div className="min-w-0">
+                                <p className="font-semibold text-[#141413] truncate max-w-[200px]">
+                                  {v.title}
+                                </p>
+                                <p className="text-[11px] text-[#5E5D59] truncate">
+                                  {v.authorName} · {v.authorLocation || 'Africa'}
+                                </p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3 px-3 font-semibold tabular-nums text-[#0E7C5B]">
+                            {v.giftsCount} {v.giftsCount === 1 ? 'gift' : 'gifts'} · {v.votesCount} votes
+                          </td>
+                          <td className="py-3 px-3">
+                            {isBoosted ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#ECFDF5] text-[#0E7C5B] font-semibold">
+                                <Zap className="w-3 h-3" />
+                                Active 24h
+                              </span>
+                            ) : v.boostedUntil > 0 ? (
+                              <span className="text-[#5E5D59]">Boosted earlier</span>
+                            ) : (
+                              <span className="text-[#9E9A93]">None</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 tabular-nums text-[#5E5D59]">
+                            {v.viewsCount} / {v.likesCount} / {v.commentsCount} / {v.sharesCount}
+                          </td>
+                          <td className="py-3 px-3 font-mono font-bold text-[#141413] tabular-nums">
+                            {score}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              type="button"
+                              disabled={crowningVideoId === v.id || isWinner}
+                              onClick={() => void handleCrownWinner(v)}
+                              className={`min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer whitespace-nowrap ${
+                                isWinner
+                                  ? 'bg-[#FEF3C7] text-[#92400E] border border-[#FCD34D] cursor-default'
+                                  : 'bg-[#0E7C5B] text-white hover:bg-[#095E44]'
+                              }`}
+                            >
+                              {isWinner
+                                ? 'Crowned Winner'
+                                : crowningVideoId === v.id
+                                  ? 'Saving...'
+                                  : 'Crown Winner'}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          {/* Creator Verification Approvals Queue */}
+          <section className="bg-white border border-[#E7E5E0] rounded-2xl p-5 space-y-4">
+            <div className="flex items-center gap-2 border-b border-[#E7E5E0] pb-3">
+              <Award className="w-5 h-5 text-[#0E7C5B]" />
+              <h2 className="font-display text-base font-bold text-[#141413]">
+                Verification Queue ({allVerifications.length})
+              </h2>
+            </div>
+
+            {allVerifications.length === 0 ? (
+              <p className="text-xs text-[#5E5D59] py-4 text-center">
+                No creator verification requests yet.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {allVerifications.map((req) => (
+                  <div
+                    key={req.uid}
+                    className="border border-[#E7E5E0] rounded-xl p-4 space-y-3 bg-[#FAF9F7]"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-bold text-[#141413]">
+                          {req.requesterName} ({req.legalOrBrandName})
+                        </p>
+                        <p className="text-xs text-[#5E5D59]">
+                          {req.requesterLocation} · {req.idType} ({req.idReference}) ·{' '}
+                          {formatFullDate(req.updatedAt)}
+                        </p>
+                      </div>
+                      <span className="text-xs font-bold uppercase text-[#0E7C5B]">
+                        {req.status}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        placeholder="Badge label"
+                        value={adminLabels[req.uid] ?? req.proposedLabel}
+                        onChange={(e) =>
+                          setAdminLabels((p) => ({ ...p, [req.uid]: e.target.value }))
+                        }
+                        className="min-h-[38px] px-3 py-1.5 bg-white border border-[#E7E5E0] rounded-lg text-xs"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Review note"
+                        value={adminNotes[req.uid] ?? req.reviewNote}
+                        onChange={(e) =>
+                          setAdminNotes((p) => ({ ...p, [req.uid]: e.target.value }))
+                        }
+                        className="min-h-[38px] px-3 py-1.5 bg-white border border-[#E7E5E0] rounded-lg text-xs"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={reviewingUid === req.uid}
+                        onClick={() => void handleAdminDecision(req, 'approved')}
+                        className="min-h-[36px] px-3 py-1.5 rounded-lg bg-[#0E7C5B] text-white text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        disabled={reviewingUid === req.uid}
+                        onClick={() => void handleAdminDecision(req, 'rejected')}
+                        className="min-h-[36px] px-3 py-1.5 rounded-lg border border-[#FECACA] bg-white text-[#B91C1C] text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <XCircle className="w-3.5 h-3.5" />
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+
+      {/* TAB: PROFILE & REGION */}
+      {activeTab === 'profile' && (
+        <section className="bg-white border border-[#E7E5E0] rounded-2xl p-5 sm:p-6 max-w-2xl space-y-5">
+          <div>
+            <h2 className="font-display text-lg font-bold text-[#141413]">
+              Profile &amp; African Region
+            </h2>
+            <p className="text-xs text-[#5E5D59]">
+              Set your African city/country so viewers can discover your stories by region.
+            </p>
+          </div>
+
+          <form onSubmit={(e) => void handleSaveProfile(e)} className="space-y-4">
+            <div className="flex items-center gap-4">
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt={displayName}
+                  className="w-16 h-16 rounded-full object-cover border border-[#E7E5E0]"
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-full bg-[#141413] text-white font-bold flex items-center justify-center">
+                  {displayName.charAt(0).toUpperCase() || 'M'}
+                </div>
+              )}
+              <div>
+                <label className="inline-block px-3.5 py-2 rounded-xl border border-[#E7E5E0] bg-[#FAF9F7] text-xs font-semibold text-[#141413] cursor-pointer hover:border-[#0E7C5B]">
+                  Change Avatar
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => void handleAvatarUpload(e)}
+                    className="sr-only"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-[#141413]">
+                  Storyteller Name
+                </label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  className="w-full min-h-[42px] px-3 py-2 bg-white border border-[#E7E5E0] rounded-xl text-sm text-[#141413] focus:outline-none focus:border-[#0E7C5B]"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-[#141413]">
+                  Role
+                </label>
+                <select
+                  value={accountType}
+                  onChange={(e) => setAccountType(e.target.value as AccountType)}
+                  className="w-full min-h-[42px] px-3 py-2 bg-white border border-[#E7E5E0] rounded-xl text-sm text-[#141413] focus:outline-none focus:border-[#0E7C5B]"
+                >
+                  <option value="creator">Storyteller / Creator</option>
+                  <option value="business">Media / Studio</option>
+                  <option value="community">Community Organizer</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-[#141413]">
+                African City &amp; Country
+              </label>
+              <input
+                list="african-cities-list"
+                type="text"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="e.g. Nairobi, Kenya / Lagos, Nigeria / Accra, Ghana"
+                className="w-full min-h-[42px] px-3 py-2 bg-white border border-[#E7E5E0] rounded-xl text-sm text-[#141413] focus:outline-none focus:border-[#0E7C5B]"
+              />
+              <datalist id="african-cities-list">
+                {AFRICAN_CITIES.map((city) => (
+                  <option key={city} value={city} />
+                ))}
+              </datalist>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-[#141413]">Bio</label>
+              <textarea
+                rows={3}
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+                placeholder="Tell viewers across Africa what kind of stories you share..."
+                className="w-full px-3 py-2 bg-white border border-[#E7E5E0] rounded-xl text-sm text-[#141413] focus:outline-none focus:border-[#0E7C5B]"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={profileSaving}
+              className="min-h-[44px] px-5 py-2.5 rounded-xl bg-[#0E7C5B] text-white text-sm font-semibold hover:bg-[#095E44] disabled:opacity-50 cursor-pointer"
+            >
+              {profileSaving ? 'Saving...' : 'Save Profile'}
+            </button>
+          </form>
+        </section>
+      )}
     </main>
   );
 }

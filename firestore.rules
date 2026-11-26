@@ -36,6 +36,14 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function utcDateKey() {
+      return string(request.time.year())
+        + '_'
+        + (request.time.month() < 10 ? '0' + string(request.time.month()) : string(request.time.month()))
+        + '_'
+        + (request.time.day() < 10 ? '0' + string(request.time.day()) : string(request.time.day()));
+    }
+
     // --- Validation Blueprints ---
 
     function isValidPublicProfile(data) {
@@ -218,6 +226,176 @@ service cloud.firestore {
         && data.createdAt is timestamp;
     }
 
+    // --- Video Arena Validation Blueprints ---
+
+    function isValidChallengeVideo(data) {
+      return data.keys().hasAll([
+          'id', 'roundId', 'authorId', 'authorName', 'authorAvatar', 'authorLocation',
+          'title', 'caption', 'thumbnailUrl', 'mimeType', 'durationSeconds', 'fileSizeBytes',
+          'chunkCount', 'videoReady', 'isActive', 'likesCount', 'commentsCount', 'sharesCount',
+          'viewsCount', 'votesCount', 'giftsCount', 'giftsTotalGhs', 'boostedUntil', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'roundId', 'authorId', 'authorName', 'authorAvatar', 'authorLocation',
+          'title', 'caption', 'thumbnailUrl', 'mimeType', 'durationSeconds', 'fileSizeBytes',
+          'chunkCount', 'videoReady', 'isActive', 'likesCount', 'commentsCount', 'sharesCount',
+          'viewsCount', 'votesCount', 'giftsCount', 'giftsTotalGhs', 'boostedUntil', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.roundId) && data.roundId.size() <= 64
+        && isValidId(data.authorId)
+        && data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 80
+        && data.authorAvatar is string && data.authorAvatar.size() <= 150000
+        && data.authorLocation is string && data.authorLocation.size() <= 100
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
+        && data.caption is string && data.caption.size() <= 400
+        && data.thumbnailUrl is string && data.thumbnailUrl.size() <= 200000
+        && data.mimeType is string && data.mimeType.size() >= 1 && data.mimeType.size() <= 60
+        && data.durationSeconds is number && data.durationSeconds >= 30 && data.durationSeconds <= 90
+        && data.fileSizeBytes is int && data.fileSizeBytes > 0 && data.fileSizeBytes < 15728640
+        && data.chunkCount is int && data.chunkCount >= 1 && data.chunkCount <= 40
+        && data.videoReady is bool
+        && data.isActive is bool
+        && data.likesCount is int && data.likesCount >= 0
+        && data.commentsCount is int && data.commentsCount >= 0
+        && data.sharesCount is int && data.sharesCount >= 0
+        && data.viewsCount is int && data.viewsCount >= 0
+        && data.votesCount is int && data.votesCount >= 0
+        && data.giftsCount is int && data.giftsCount >= 0
+        && data.giftsTotalGhs is int && data.giftsTotalGhs >= 0
+        && data.boostedUntil is int && data.boostedUntil >= 0
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidChallengeVideoChunk(data) {
+      return data.keys().hasAll(['videoId', 'authorId', 'index', 'data'])
+        && data.keys().hasOnly(['videoId', 'authorId', 'index', 'data'])
+        && isValidId(data.videoId)
+        && isValidId(data.authorId)
+        && data.index is int && data.index >= 0 && data.index < 40
+        && data.data is string && data.data.size() >= 1 && data.data.size() <= 750000;
+    }
+
+    function isValidChallengeVideoLike(data) {
+      return data.keys().hasAll(['userId', 'videoId', 'createdAt'])
+        && data.keys().hasOnly(['userId', 'videoId', 'createdAt'])
+        && isValidId(data.userId)
+        && isValidId(data.videoId)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidChallengeVideoComment(data) {
+      return data.keys().hasAll(['id', 'videoId', 'authorId', 'authorName', 'authorAvatar', 'text', 'createdAt'])
+        && data.keys().hasOnly(['id', 'videoId', 'authorId', 'authorName', 'authorAvatar', 'text', 'createdAt'])
+        && isValidId(data.id)
+        && isValidId(data.videoId)
+        && isValidId(data.authorId)
+        && data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 80
+        && data.authorAvatar is string && data.authorAvatar.size() <= 150000
+        && data.text is string && data.text.size() >= 1 && data.text.size() <= 500
+        && data.createdAt is timestamp;
+    }
+
+    function isValidChallengeVideoGift(data) {
+      return data.keys().hasAll(['id', 'videoId', 'senderId', 'senderName', 'giftType', 'amountGhs', 'createdAt'])
+        && data.keys().hasOnly(['id', 'videoId', 'senderId', 'senderName', 'giftType', 'amountGhs', 'createdAt'])
+        && isValidId(data.id)
+        && isValidId(data.videoId)
+        && isValidId(data.senderId)
+        && data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 80
+        && data.giftType in ['rose', 'fire', 'lion']
+        && data.amountGhs is int
+        && (
+          (data.giftType == 'rose' && data.amountGhs == 2)
+          || (data.giftType == 'fire' && data.amountGhs == 5)
+          || (data.giftType == 'lion' && data.amountGhs == 20)
+        )
+        && data.createdAt is timestamp;
+    }
+
+    function isValidChallengeVideoBoost(data) {
+      return data.keys().hasAll(['id', 'videoId', 'payerId', 'provider', 'maskedPhone', 'amountGhs', 'boostedUntil', 'createdAt'])
+        && data.keys().hasOnly(['id', 'videoId', 'payerId', 'provider', 'maskedPhone', 'amountGhs', 'boostedUntil', 'createdAt'])
+        && isValidId(data.id)
+        && isValidId(data.videoId)
+        && isValidId(data.payerId)
+        && data.provider in ['MTN MoMo', 'M-Pesa', 'Airtel Money', 'Telecel Cash', 'AirtelTigo Money']
+        && data.maskedPhone is string && data.maskedPhone.size() >= 4 && data.maskedPhone.size() <= 20
+        && data.amountGhs is int && data.amountGhs == 20
+        && data.boostedUntil is int && data.boostedUntil > 0
+        && data.createdAt is timestamp;
+    }
+
+    function isValidChallengeDailyVote(data) {
+      return data.keys().hasAll(['userId', 'dateKey', 'videoId', 'createdAt'])
+        && data.keys().hasOnly(['userId', 'dateKey', 'videoId', 'createdAt'])
+        && isValidId(data.userId)
+        && data.dateKey is string && data.dateKey.matches('^[0-9]{4}_[0-9]{2}_[0-9]{2}$')
+        && isValidId(data.videoId)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidChallengeConfig(data) {
+      return data.keys().hasAll([
+          'isPublic', 'sponsorName', 'prizeGhs', 'winnerVideoId', 'winnerName',
+          'winnerLocation', 'winnerTitle', 'winnerThumbnailUrl', 'winnerRoundLabel', 'winnerPrizeGhs', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'isPublic', 'sponsorName', 'prizeGhs', 'winnerVideoId', 'winnerName',
+          'winnerLocation', 'winnerTitle', 'winnerThumbnailUrl', 'winnerRoundLabel', 'winnerPrizeGhs', 'updatedAt'
+        ])
+        && data.isPublic is bool && data.isPublic == true
+        && data.sponsorName is string && data.sponsorName.size() >= 1 && data.sponsorName.size() <= 80
+        && data.prizeGhs is int && data.prizeGhs >= 0
+        && data.winnerVideoId is string && data.winnerVideoId.size() <= 128
+        && data.winnerName is string && data.winnerName.size() <= 80
+        && data.winnerLocation is string && data.winnerLocation.size() <= 100
+        && data.winnerTitle is string && data.winnerTitle.size() <= 120
+        && data.winnerThumbnailUrl is string && data.winnerThumbnailUrl.size() <= 200000
+        && data.winnerRoundLabel is string && data.winnerRoundLabel.size() <= 60
+        && data.winnerPrizeGhs is int && data.winnerPrizeGhs >= 0
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSavedVideo(data) {
+      return data.keys().hasAll(['userId', 'videoId', 'createdAt'])
+        && data.keys().hasOnly(['userId', 'videoId', 'createdAt'])
+        && isValidId(data.userId)
+        && isValidId(data.videoId)
+        && data.createdAt is timestamp;
+    }
+
+    function isValidCreatorSubscription(data) {
+      return data.keys().hasAll([
+          'id', 'subscriberId', 'subscriberName', 'targetId', 'targetName',
+          'planType', 'amountGhs', 'provider', 'maskedPhone', 'status',
+          'expiresAt', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'subscriberId', 'subscriberName', 'targetId', 'targetName',
+          'planType', 'amountGhs', 'provider', 'maskedPhone', 'status',
+          'expiresAt', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.subscriberId)
+        && data.subscriberName is string && data.subscriberName.size() >= 1 && data.subscriberName.size() <= 80
+        && isValidId(data.targetId)
+        && data.targetName is string && data.targetName.size() >= 1 && data.targetName.size() <= 80
+        && data.planType in ['creator_fan', 'creator_pro']
+        && data.amountGhs is int
+        && (
+          (data.planType == 'creator_fan' && data.amountGhs == 15)
+          || (data.planType == 'creator_pro' && data.amountGhs == 35)
+        )
+        && data.provider in ['MTN MoMo', 'M-Pesa', 'Airtel Money', 'Telecel Cash', 'AirtelTigo Money']
+        && data.maskedPhone is string && data.maskedPhone.size() >= 4 && data.maskedPhone.size() <= 20
+        && data.status in ['active', 'cancelled']
+        && data.expiresAt is int && data.expiresAt > 0
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
     // --- Collection Rules ---
 
     match /publicProfiles/{userId} {
@@ -256,7 +434,6 @@ service cloud.firestore {
         );
       allow delete: if false;
 
-      // Subcollection: Followers (users following {userId})
       match /followers/{followerId} {
         allow get: if isValidId(userId) && isValidId(followerId);
         allow list: if isValidId(userId) && existing().followingId == userId;
@@ -280,7 +457,6 @@ service cloud.firestore {
           && !existsAfter(/databases/$(database)/documents/publicProfiles/$(followerId)/following/$(userId));
       }
 
-      // Subcollection: Following (users followed by {userId})
       match /following/{followingId} {
         allow get: if isValidId(userId) && isValidId(followingId);
         allow list: if isValidId(userId) && existing().followerId == userId;
@@ -339,6 +515,22 @@ service cloud.firestore {
           && exists(/databases/$(database)/documents/posts/$(postId));
         allow update: if false;
         allow delete: if isVerified() && isValidId(userId) && isValidId(postId) && isOwner(userId);
+      }
+
+      match /savedVideos/{videoId} {
+        allow get: if isSignedIn() && isValidId(userId) && isValidId(videoId) && isOwner(userId);
+        allow list: if isSignedIn() && isValidId(userId) && isOwner(userId) && existing().userId == request.auth.uid;
+        allow create: if isVerified()
+          && isValidId(userId)
+          && isValidId(videoId)
+          && isOwner(userId)
+          && isValidSavedVideo(incoming())
+          && incoming().userId == request.auth.uid
+          && incoming().videoId == videoId
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/challengeVideos/$(videoId));
+        allow update: if false;
+        allow delete: if isVerified() && isValidId(userId) && isValidId(videoId) && isOwner(userId);
       }
     }
 
@@ -410,7 +602,6 @@ service cloud.firestore {
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
         && (
-          // Action 1: Author edits post or adjusts form
           (
             existing().authorId == request.auth.uid
             && incoming().diff(existing()).affectedKeys().hasOnly([
@@ -420,7 +611,6 @@ service cloud.firestore {
               'hasForm', 'formConfig', 'updatedAt'
             ])
           )
-          // Action 2: User toggles like atomically with /likes/{uid}
           || (
             existing().visibility == 'public'
             && incoming().diff(existing()).affectedKeys().hasOnly(['likesCount', 'updatedAt'])
@@ -429,19 +619,16 @@ service cloud.firestore {
               || (incoming().likesCount == existing().likesCount - 1 && !existsAfter(/databases/$(database)/documents/posts/$(postId)/likes/$(request.auth.uid)))
             )
           )
-          // Action 3: User increments share count
           || (
             existing().visibility == 'public'
             && incoming().diff(existing()).affectedKeys().hasOnly(['sharesCount', 'updatedAt'])
             && incoming().sharesCount == existing().sharesCount + 1
           )
-          // Action 4: Comment count synchronized on comment create/delete
           || (
             existing().visibility == 'public'
             && incoming().diff(existing()).affectedKeys().hasOnly(['commentsCount', 'updatedAt'])
             && (incoming().commentsCount == existing().commentsCount + 1 || incoming().commentsCount == existing().commentsCount - 1)
           )
-          // Action 5: Submission count synchronized on form submit
           || (
             existing().visibility == 'public'
             && existing().hasForm == true
@@ -454,7 +641,6 @@ service cloud.firestore {
         && isValidId(postId)
         && existing().authorId == request.auth.uid;
 
-      // Subcollection: Likes
       match /likes/{userId} {
         allow get: if isValidId(postId) && isValidId(userId) && isOwner(userId);
         allow list: if isSignedIn() && existing().userId == request.auth.uid;
@@ -477,7 +663,6 @@ service cloud.firestore {
           && getAfter(/databases/$(database)/documents/posts/$(postId)).data.likesCount == get(/databases/$(database)/documents/posts/$(postId)).data.likesCount - 1;
       }
 
-      // Subcollection: Comments
       match /comments/{commentId} {
         allow get: if isValidId(postId)
           && isValidId(commentId)
@@ -511,7 +696,6 @@ service cloud.firestore {
           && getAfter(/databases/$(database)/documents/posts/$(postId)).data.commentsCount == get(/databases/$(database)/documents/posts/$(postId)).data.commentsCount - 1;
       }
 
-      // Subcollection: Form Submissions
       match /submissions/{submissionId} {
         allow get: if isSignedIn()
           && isValidId(postId)
@@ -539,6 +723,266 @@ service cloud.firestore {
           && isValidId(submissionId)
           && (existing().postAuthorId == request.auth.uid || existing().submitterId == request.auth.uid);
       }
+    }
+
+    // --- Video Arena Collections ---
+
+    match /challengeConfig/{configId} {
+      allow get: if isValidId(configId);
+      allow list: if existing().isPublic == true;
+      allow create, update: if isAdmin()
+        && isValidId(configId)
+        && isValidChallengeConfig(incoming())
+        && incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    match /challengeDailyVotes/{voteId} {
+      allow get: if isSignedIn() && isValidId(voteId) && voteId.matches('^' + request.auth.uid + '__[0-9]{4}_[0-9]{2}_[0-9]{2}$');
+      allow list: if isSignedIn() && existing().userId == request.auth.uid;
+      allow create: if isVerified()
+        && isValidId(voteId)
+        && isValidChallengeDailyVote(incoming())
+        && incoming().userId == request.auth.uid
+        && incoming().dateKey == utcDateKey()
+        && voteId == request.auth.uid + '__' + incoming().dateKey
+        && incoming().createdAt == request.time
+        && exists(/databases/$(database)/documents/challengeVideos/$(incoming().videoId))
+        && getAfter(/databases/$(database)/documents/challengeVideos/$(incoming().videoId)).data.votesCount == get(/databases/$(database)/documents/challengeVideos/$(incoming().videoId)).data.votesCount + 1;
+      allow update, delete: if false;
+    }
+
+    match /challengeVideos/{videoId} {
+      allow get: if isValidId(videoId);
+      allow list: if existing().isActive == true;
+
+      allow create: if isVerified()
+        && isValidId(videoId)
+        && isValidChallengeVideo(incoming())
+        && incoming().id == videoId
+        && incoming().authorId == request.auth.uid
+        && videoId == incoming().roundId + '__' + request.auth.uid
+        && incoming().likesCount == 0
+        && incoming().commentsCount == 0
+        && incoming().sharesCount == 0
+        && incoming().viewsCount == 0
+        && incoming().votesCount == 0
+        && incoming().giftsCount == 0
+        && incoming().giftsTotalGhs == 0
+        && incoming().boostedUntil == 0
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isVerified()
+        && isValidId(videoId)
+        && isValidChallengeVideo(incoming())
+        && incoming().id == existing().id
+        && incoming().roundId == existing().roundId
+        && incoming().authorId == existing().authorId
+        && incoming().durationSeconds == existing().durationSeconds
+        && incoming().fileSizeBytes == existing().fileSizeBytes
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action 1: Owner edits caption/title or marks chunk upload complete
+          (
+            isOwner(existing().authorId)
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'caption', 'thumbnailUrl', 'videoReady', 'chunkCount', 'updatedAt'
+            ])
+          )
+          // Action 2: Atomic like toggle
+          || (
+            existing().isActive == true
+            && incoming().diff(existing()).affectedKeys().hasOnly(['likesCount', 'updatedAt'])
+            && (
+              (incoming().likesCount == existing().likesCount + 1 && existsAfter(/databases/$(database)/documents/challengeVideos/$(videoId)/likes/$(request.auth.uid)))
+              || (incoming().likesCount == existing().likesCount - 1 && !existsAfter(/databases/$(database)/documents/challengeVideos/$(videoId)/likes/$(request.auth.uid)))
+            )
+          )
+          // Action 3: Comment count sync
+          || (
+            existing().isActive == true
+            && incoming().diff(existing()).affectedKeys().hasOnly(['commentsCount', 'updatedAt'])
+            && (incoming().commentsCount == existing().commentsCount + 1 || incoming().commentsCount == existing().commentsCount - 1)
+          )
+          // Action 4: Share count increment
+          || (
+            existing().isActive == true
+            && incoming().diff(existing()).affectedKeys().hasOnly(['sharesCount', 'updatedAt'])
+            && incoming().sharesCount == existing().sharesCount + 1
+          )
+          // Action 5: View count increment
+          || (
+            existing().isActive == true
+            && incoming().diff(existing()).affectedKeys().hasOnly(['viewsCount', 'updatedAt'])
+            && incoming().viewsCount == existing().viewsCount + 1
+          )
+          // Action 6: Daily vote increment (1 free vote per user per UTC day)
+          || (
+            existing().isActive == true
+            && incoming().diff(existing()).affectedKeys().hasOnly(['votesCount', 'updatedAt'])
+            && incoming().votesCount == existing().votesCount + 1
+            && !exists(/databases/$(database)/documents/challengeDailyVotes/$(request.auth.uid + '__' + utcDateKey()))
+            && existsAfter(/databases/$(database)/documents/challengeDailyVotes/$(request.auth.uid + '__' + utcDateKey()))
+            && getAfter(/databases/$(database)/documents/challengeDailyVotes/$(request.auth.uid + '__' + utcDateKey())).data.videoId == videoId
+          )
+          // Action 7: Gift increment (Rose 2, Fire 5, Lion 20)
+          || (
+            existing().isActive == true
+            && incoming().diff(existing()).affectedKeys().hasOnly(['giftsCount', 'giftsTotalGhs', 'updatedAt'])
+            && incoming().giftsCount == existing().giftsCount + 1
+            && (
+              incoming().giftsTotalGhs == existing().giftsTotalGhs + 2
+              || incoming().giftsTotalGhs == existing().giftsTotalGhs + 5
+              || incoming().giftsTotalGhs == existing().giftsTotalGhs + 20
+            )
+          )
+          // Action 8: 24-hour Boost activation
+          || (
+            existing().isActive == true
+            && incoming().diff(existing()).affectedKeys().hasOnly(['boostedUntil', 'updatedAt'])
+            && incoming().boostedUntil > 0
+          )
+        );
+
+      allow delete: if isVerified()
+        && isValidId(videoId)
+        && (isOwner(existing().authorId) || isAdmin());
+
+      match /chunks/{chunkId} {
+        allow get: if isValidId(videoId) && isValidId(chunkId) && exists(/databases/$(database)/documents/challengeVideos/$(videoId));
+        allow list: if isValidId(videoId) && existing().videoId == videoId;
+        allow create: if isVerified()
+          && isValidId(videoId)
+          && isValidId(chunkId)
+          && isValidChallengeVideoChunk(incoming())
+          && incoming().videoId == videoId
+          && incoming().authorId == request.auth.uid
+          && exists(/databases/$(database)/documents/challengeVideos/$(videoId))
+          && get(/databases/$(database)/documents/challengeVideos/$(videoId)).data.authorId == request.auth.uid;
+        allow update: if false;
+        allow delete: if isVerified()
+          && isValidId(videoId)
+          && isValidId(chunkId)
+          && (existing().authorId == request.auth.uid || isAdmin());
+      }
+
+      match /likes/{userId} {
+        allow get: if isValidId(videoId) && isValidId(userId) && isOwner(userId);
+        allow list: if isSignedIn() && existing().userId == request.auth.uid;
+        allow create: if isVerified()
+          && isValidId(videoId)
+          && isValidId(userId)
+          && isOwner(userId)
+          && isValidChallengeVideoLike(incoming())
+          && incoming().userId == request.auth.uid
+          && incoming().videoId == videoId
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/challengeVideos/$(videoId))
+          && getAfter(/databases/$(database)/documents/challengeVideos/$(videoId)).data.likesCount == get(/databases/$(database)/documents/challengeVideos/$(videoId)).data.likesCount + 1;
+        allow update: if false;
+        allow delete: if isVerified()
+          && isValidId(videoId)
+          && isValidId(userId)
+          && isOwner(userId)
+          && exists(/databases/$(database)/documents/challengeVideos/$(videoId))
+          && getAfter(/databases/$(database)/documents/challengeVideos/$(videoId)).data.likesCount == get(/databases/$(database)/documents/challengeVideos/$(videoId)).data.likesCount - 1;
+      }
+
+      match /comments/{commentId} {
+        allow get: if isValidId(videoId)
+          && isValidId(commentId)
+          && exists(/databases/$(database)/documents/challengeVideos/$(videoId));
+        allow list: if isValidId(videoId) && existing().videoId == videoId;
+        allow create: if isVerified()
+          && isValidId(videoId)
+          && isValidId(commentId)
+          && isValidChallengeVideoComment(incoming())
+          && incoming().id == commentId
+          && incoming().videoId == videoId
+          && incoming().authorId == request.auth.uid
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/challengeVideos/$(videoId))
+          && getAfter(/databases/$(database)/documents/challengeVideos/$(videoId)).data.commentsCount == get(/databases/$(database)/documents/challengeVideos/$(videoId)).data.commentsCount + 1;
+        allow update: if false;
+        allow delete: if isVerified()
+          && isValidId(videoId)
+          && isValidId(commentId)
+          && exists(/databases/$(database)/documents/challengeVideos/$(videoId))
+          && (
+            existing().authorId == request.auth.uid
+            || get(/databases/$(database)/documents/challengeVideos/$(videoId)).data.authorId == request.auth.uid
+          )
+          && getAfter(/databases/$(database)/documents/challengeVideos/$(videoId)).data.commentsCount == get(/databases/$(database)/documents/challengeVideos/$(videoId)).data.commentsCount - 1;
+      }
+
+      match /gifts/{giftId} {
+        allow get: if isValidId(videoId) && isValidId(giftId) && exists(/databases/$(database)/documents/challengeVideos/$(videoId));
+        allow list: if isValidId(videoId) && existing().videoId == videoId;
+        allow create: if isVerified()
+          && isValidId(videoId)
+          && isValidId(giftId)
+          && isValidChallengeVideoGift(incoming())
+          && incoming().id == giftId
+          && incoming().videoId == videoId
+          && incoming().senderId == request.auth.uid
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/challengeVideos/$(videoId))
+          && getAfter(/databases/$(database)/documents/challengeVideos/$(videoId)).data.giftsCount == get(/databases/$(database)/documents/challengeVideos/$(videoId)).data.giftsCount + 1
+          && getAfter(/databases/$(database)/documents/challengeVideos/$(videoId)).data.giftsTotalGhs == get(/databases/$(database)/documents/challengeVideos/$(videoId)).data.giftsTotalGhs + incoming().amountGhs;
+        allow update, delete: if false;
+      }
+
+      match /boosts/{boostId} {
+        allow get: if isSignedIn() && isValidId(videoId) && isValidId(boostId) && (existing().payerId == request.auth.uid || isAdmin());
+        allow list: if isSignedIn() && existing().payerId == request.auth.uid;
+        allow create: if isVerified()
+          && isValidId(videoId)
+          && isValidId(boostId)
+          && isValidChallengeVideoBoost(incoming())
+          && incoming().id == boostId
+          && incoming().videoId == videoId
+          && incoming().payerId == request.auth.uid
+          && incoming().createdAt == request.time
+          && exists(/databases/$(database)/documents/challengeVideos/$(videoId))
+          && getAfter(/databases/$(database)/documents/challengeVideos/$(videoId)).data.boostedUntil == incoming().boostedUntil;
+        allow update, delete: if false;
+      }
+    }
+
+    match /creatorSubscriptions/{subId} {
+      allow get: if isSignedIn()
+        && isValidId(subId)
+        && (existing().subscriberId == request.auth.uid || existing().targetId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn()
+        && (existing().subscriberId == request.auth.uid || existing().targetId == request.auth.uid || isAdmin());
+      allow create: if isVerified()
+        && isValidId(subId)
+        && isValidCreatorSubscription(incoming())
+        && incoming().id == subId
+        && incoming().subscriberId == request.auth.uid
+        && subId == request.auth.uid + '__' + incoming().targetId
+        && incoming().status == 'active'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerified()
+        && isValidId(subId)
+        && isValidCreatorSubscription(incoming())
+        && incoming().subscriberId == request.auth.uid
+        && incoming().id == existing().id
+        && incoming().subscriberId == existing().subscriberId
+        && incoming().targetId == existing().targetId
+        && incoming().planType == existing().planType
+        && incoming().amountGhs == existing().amountGhs
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'provider', 'maskedPhone', 'expiresAt', 'updatedAt'
+        ]);
+      allow delete: if isVerified()
+        && isValidId(subId)
+        && existing().subscriberId == request.auth.uid;
     }
   }
 }

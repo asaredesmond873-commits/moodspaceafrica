@@ -12,6 +12,13 @@
    - Submitted verification proofs (`/verificationRequests/{userId}`) contain sensitive identity references and are readable (`get` and `list`) strictly by the applicant (`uid == request.auth.uid`) and the bootstrapped admin.
 7. **Path & Size Poisoning Guards**: All document IDs are validated against `^[a-zA-Z0-9_\-]+$` and bounded to `<= 128` characters. Every string field and array field (`formConfig.fields <= 15`) has explicit `.size()` bounds.
 8. **Bidirectional Follow Atomicity & Anti-Self-Follow**: Writes to `/publicProfiles/{targetUid}/followers/{followerUid}` and `/publicProfiles/{followerUid}/following/{targetUid}` are strictly authorized only for `request.auth.uid == followerUid`, forbid `followerUid == targetUid`, require both public profiles to exist, and enforce cross-subcollection `existsAfter` / `!existsAfter` atomicity.
+9. **Video Arena Constraints (1 Video/Round, 30–90s, <15MB) & 1 Free Daily Vote**:
+   - `/challengeVideos/{videoId}` mandates `videoId == roundId + '__' + request.auth.uid`, `durationSeconds` between `30` and `90`, and `fileSizeBytes < 15728640`.
+   - `/challengeDailyVotes/{voteId}` mandates `voteId == request.auth.uid + '__' + dateKey` and atomically increments `votesCount` by `1` on the target video.
+   - Gifts (`rose=2`, `fire=5`, `lion=20`) and 24-hour Boosts (`amountGhs == 20`) validate exact GHS tiers and atomic counters.
+10. **Subscriptions & Saved Video Isolation**:
+    - `/creatorSubscriptions/{subId}` mandates deterministic ID `${subscriberId}__${targetId}`, `subscriberId == request.auth.uid`, exact tier pricing (`creator_fan == 15`, `creator_pro == 35`), and restricts reads strictly to `subscriberId`, `targetId`, or `isAdmin()`.
+    - `/userPrivate/{userId}/savedVideos/{videoId}` is strictly owner-only (`isOwner(userId)`) and checks parent `/challengeVideos/{videoId}` existence.
 
 ## 2. "Dirty Dozen+" Adversarial Payloads (Must Return PERMISSION_DENIED)
 1. **Self-Verification Escalation on Profile Create**: Creating `/publicProfiles/{uid}` with `badgeVerified: true` -> Blocked by `create` check requiring `badgeVerified == false`.
@@ -27,4 +34,8 @@
 11. **Closed Form Submission Attack**: Submitting a response to `/posts/{postId}/submissions/{subId}` when `formConfig.isOpen == false` -> Blocked by parent `get()` check.
 12. **Comment Moderation Hijack**: User C attempting to delete User B's comment on User A's post -> Blocked by `existing().authorId == request.auth.uid || get(...post...).data.authorId == request.auth.uid`.
 13. **Self-Follow or Asymmetric Follow Spoof**: User A creating `/publicProfiles/{userA}/followers/{userA}` or creating `/publicProfiles/{userB}/followers/{userA}` without atomically creating `/publicProfiles/{userA}/following/{userB}` -> Blocked by `followerId != userId` and `existsAfter(...)` cross-check.
+14. **Second Video in Same 14-Day Round / Out-of-Range Duration or Size**: Uploading a 15-second or 16MB video or using a custom `videoId != roundId + '__' + uid` -> Blocked by `isValidChallengeVideo` and `videoId` deterministic key check.
+15. **Double Daily Vote / Gift Amount Tampering**: Creating a second daily vote with a spoofed `voteId` or gifting `rose` with `amountGhs: 999` -> Blocked by `voteId == uid + '__' + dateKey` and tier checks.
+16. **Subscription Spoofing / Snooping**: Creating a subscription for another user (`subscriberId != uid`), tampering `amountGhs` for `creator_pro` to `0`, or reading another user's private subscription receipt -> Blocked by `isValidCreatorSubscription` and owner/target read checks.
+
 

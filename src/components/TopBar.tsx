@@ -1,39 +1,43 @@
 import { useAuth } from '../context/AuthContext';
 
-export type NavSection = 'discover' | 'events' | 'promos' | 'dashboard';
+export type NavSection = 'stories' | 'leaderboard' | 'subscriptions' | 'dashboard';
 
 interface TopBarProps {
   activeSection: NavSection;
   onSelectSection: (section: NavSection) => void;
-  onOpenComposer: () => void;
+  onOpenVideoUpload: () => void;
 }
 
-export function TopBar({ activeSection, onSelectSection, onOpenComposer }: TopBarProps) {
+export function TopBar({
+  activeSection,
+  onSelectSection,
+  onOpenVideoUpload,
+}: TopBarProps) {
   const { user, authBusy, signInWithGoogle } = useAuth();
 
   const navItems: { id: NavSection; label: string }[] = [
-    { id: 'discover', label: 'Discover' },
-    { id: 'events', label: 'Events' },
-    { id: 'promos', label: 'Promos' },
+    { id: 'stories', label: 'Stories' },
+    { id: 'leaderboard', label: 'Leaderboard' },
+    { id: 'subscriptions', label: 'Subscriptions' },
     { id: 'dashboard', label: 'Dashboard' },
   ];
 
   return (
     <header className="sticky top-0 z-30 bg-[#FAF9F7]/95 backdrop-blur-sm border-b border-[#E7E5E0]">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-8">
-        {/* Zone 1: Single-line Brand Wordmark */}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-6">
+        {/* Zone 1: Brand Wordmark */}
         <button
           type="button"
-          onClick={() => onSelectSection('discover')}
+          onClick={() => onSelectSection('stories')}
           className="font-display text-xl font-bold tracking-tight text-[#141413] whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0E7C5B] rounded"
         >
           MoodSpace Africa
         </button>
 
-        {/* Zone 2: 4 Clean Single-Line Navigation Links */}
+        {/* Zone 2: Single-Line Navigation Links */}
         <nav
           aria-label="Primary navigation"
-          className="hidden md:flex items-center gap-7 text-sm font-medium"
+          className="hidden md:flex items-center gap-6 text-sm font-medium"
         >
           {navItems.map((item) => {
             const isActive = activeSection === item.id;
@@ -59,10 +63,10 @@ export function TopBar({ activeSection, onSelectSection, onOpenComposer }: TopBa
           {user ? (
             <button
               type="button"
-              onClick={onOpenComposer}
+              onClick={onOpenVideoUpload}
               className="px-4 py-2 text-sm font-semibold text-white bg-[#0E7C5B] rounded-lg hover:bg-[#095E44] transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0E7C5B]"
             >
-              Create Post
+              Upload Story
             </button>
           ) : (
             <button
@@ -77,10 +81,10 @@ export function TopBar({ activeSection, onSelectSection, onOpenComposer }: TopBa
         </div>
       </div>
 
-      {/* Mobile secondary nav row (only < md) */}
+      {/* Mobile secondary nav row (< md) */}
       <nav
         aria-label="Mobile navigation"
-        className="flex md:hidden items-center justify-around border-t border-[#E7E5E0] px-2 py-1.5 bg-[#FAF9F7]"
+        className="flex md:hidden items-center justify-between gap-1 border-t border-[#E7E5E0] px-2 py-1.5 bg-[#FAF9F7] overflow-x-auto no-scrollbar"
       >
         {navItems.map((item) => {
           const isActive = activeSection === item.id;
