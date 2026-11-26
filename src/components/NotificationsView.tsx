@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Bell,
   CheckCheck,
@@ -254,10 +254,26 @@ export function NotificationsView({
     [activities, lastReadMs]
   );
 
+  const latestActivityMs = useMemo(
+    () => activities.reduce((max, item) => Math.max(max, item.createdAtMs), 0),
+    [activities]
+  );
+
+  const onMarkReadRef = useRef(onMarkRead);
+  onMarkReadRef.current = onMarkRead;
+
+  useEffect(() => {
+    if (!user) return;
+    if (latestActivityMs <= lastReadMs && lastReadMs > 0) return;
+    const nextMs = markAllNotificationsReadNow(latestActivityMs);
+    setLastReadMs((prev) => Math.max(prev, nextMs));
+    onMarkReadRef.current?.();
+  }, [user, latestActivityMs, lastReadMs]);
+
   const handleMarkAllRead = () => {
-    const nextMs = markAllNotificationsReadNow();
+    const nextMs = markAllNotificationsReadNow(latestActivityMs);
     setLastReadMs(nextMs);
-    onMarkRead?.();
+    onMarkReadRef.current?.();
   };
 
   if (!user) {

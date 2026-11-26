@@ -7,10 +7,11 @@ export function getNotifLastReadMs(): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-export function markAllNotificationsReadNow(): number {
-  const now = Date.now();
+export function markAllNotificationsReadNow(minTimestampMs = 0): number {
+  const prev = getNotifLastReadMs();
+  const next = Math.max(Date.now(), minTimestampMs, prev);
   if (typeof window !== 'undefined') {
-    window.localStorage.setItem(NOTIF_LAST_READ_KEY, String(now));
+    window.localStorage.setItem(NOTIF_LAST_READ_KEY, String(next));
   }
-  return now;
+  return next;
 }

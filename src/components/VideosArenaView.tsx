@@ -40,7 +40,6 @@ import {
 import {
   computeCreatorSupportScore,
   getAfricanRegionFromLocation,
-  getCountdownParts,
   getCurrentChallengeRound,
   getTodayUtcDateKey,
 } from '../utils/challengeMedia';
@@ -69,6 +68,8 @@ interface VideosArenaViewProps {
   onViewProfile: (uid: string) => void;
   onNotify: (msg: string) => void;
   uploadRequestedNonce?: number;
+  deepLinkVideoId?: string | null;
+  onClearDeepLink?: () => void;
 }
 
 const DATA_SAVER_STORAGE_KEY = 'moodspace_africa_data_saver_v1';
@@ -103,11 +104,11 @@ export function VideosArenaView({
   onViewProfile,
   onNotify,
   uploadRequestedNonce = 0,
+  deepLinkVideoId = null,
+  onClearDeepLink,
 }: VideosArenaViewProps) {
   const { user, signInWithGoogle } = useAuth();
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  const round = useMemo(() => getCurrentChallengeRound(nowMs), [Math.floor(nowMs / 60000)]);
-  const countdown = useMemo(() => getCountdownParts(round.endMs, nowMs), [round.endMs, nowMs]);
+  const round = useMemo(() => getCurrentChallengeRound(), []);
 
   const [config, setConfig] = useState<ChallengeConfig>(DEFAULT_ARENA_CONFIG);
   const [dailyVote, setDailyVote] = useState<ChallengeDailyVote | null>(null);
@@ -133,13 +134,6 @@ export function VideosArenaView({
   useEffect(() => {
     setFeedScope(mode === 'following' ? 'following' : 'for_you');
   }, [mode]);
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      setNowMs(Date.now());
-    }, 1000);
-    return () => window.clearInterval(interval);
-  }, []);
 
   useEffect(() => {
     if (uploadRequestedNonce > 0) {
@@ -179,15 +173,16 @@ export function VideosArenaView({
 
   useEffect(() => {
     if (videosLoading || typeof window === 'undefined') return;
+    const searchTarget = new URLSearchParams(window.location.search).get('story')?.trim() || '';
     const hash = window.location.hash;
-    if (!hash.startsWith('#video=')) return;
-    const targetId = hash.replace('#video=', '').trim();
+    const hashTarget = hash.startsWith('#video=') ? hash.replace('#video=', '').trim() : '';
+    const targetId = deepLinkVideoId || searchTarget || hashTarget;
     if (!targetId) return;
     const el = document.getElementById(`video-reel-${targetId}`);
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-  }, [videosLoading, roundVideos.length]);
+  }, [videosLoading, roundVideos.length, allVideos.length, deepLinkVideoId]);
 
   const myRoundEntry = useMemo(
     () => (user ? roundVideos.find((v) => v.authorId === user.uid) ?? null : null),
@@ -226,8 +221,27 @@ export function VideosArenaView({
     } else {
       sorted.sort((a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0));
     }
+
+    if (deepLinkVideoId) {
+      const targetVideo = allVideos.find((v) => v.id === deepLinkVideoId);
+      if (targetVideo) {
+        const rest = sorted.filter((v) => v.id !== deepLinkVideoId);
+        return [targetVideo, ...rest];
+      }
+    }
+
     return sorted;
-  }, [baseVideoList, effectiveScope, feedSort, followingIds, savedVideoIds, selectedRegion, searchQuery]);
+  }, [
+    baseVideoList,
+    allVideos,
+    effectiveScope,
+    feedSort,
+    followingIds,
+    savedVideoIds,
+    selectedRegion,
+    searchQuery,
+    deepLinkVideoId,
+  ]);
 
   const suggestedFriends = useMemo(() => {
     const byUid = new Map<
@@ -637,6 +651,22 @@ export function VideosArenaView({
               </div>
             )}
 
+            {/* Deep Link Shared Story Notice */}
+            {deepLinkVideoId && allVideos.some((v) => v.id === deepLinkVideoId) && (
+              <div className="max-w-[440px] mx-auto flex items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0] text-xs text-[#0E7C5B]">
+                <span className="font-semibold">Viewing shared story link</span>
+                {onClearDeepLink && (
+                  <button
+                    type="button"
+                    onClick={onClearDeepLink}
+                    className="font-semibold underline hover:text-[#095E44] cursor-pointer"
+                  >
+                    Show regular feed
+                  </button>
+                )}
+              </div>
+            )}
+
             {/* Vertical Video Reel Feed */}
             {videosLoading ? (
               <div className="max-w-[440px] mx-auto aspect-[9/16] max-h-[65dvh] rounded-2xl bg-white border border-[#E7E5E0] flex flex-col items-center justify-center gap-3 p-6 text-center">
@@ -715,7 +745,7 @@ export function VideosArenaView({
           {/* Calm Desktop Sidebar (Hidden on Mobile so Mobile Feed is Pure TikTok-Style) */}
           <aside className="hidden lg:block lg:col-span-5 space-y-5 lg:sticky lg:top-20">
             <section
-              aria-label="Round Countdown and Daily Vote"
+              aria-label="Storyteller Reward and Daily Vote"
               className="bg-white border border-[#E7E5E0] rounded-2xl p-5 space-y-4"
             >
               <div className="flex items-center justify-between gap-3">
@@ -730,27 +760,6 @@ export function VideosArenaView({
                 <div className="w-10 h-10 rounded-xl bg-[#FEF3C7] text-[#D97706] flex items-center justify-center shrink-0">
                   <Trophy className="w-5 h-5" />
                 </div>
-              </div>
-
-              <div className="grid grid-cols-4 gap-2 text-center">
-                {[
-                  { label: 'Days', value: String(countdown.days).padStart(2, '0') },
-                  { label: 'Hours', value: String(countdown.hours).padStart(2, '0') },
-                  { label: 'Mins', value: String(countdown.minutes).padStart(2, '0') },
-                  { label: 'Secs', value: String(countdown.seconds).padStart(2, '0') },
-                ].map((unit) => (
-                  <div
-                    key={unit.label}
-                    className="bg-[#FAF9F7] border border-[#E7E5E0] rounded-xl py-2 px-1"
-                  >
-                    <div className="font-display text-lg font-bold text-[#141413] tabular-nums leading-none">
-                      {unit.value}
-                    </div>
-                    <div className="text-[10px] text-[#5E5D59] mt-1 font-medium">
-                      {unit.label}
-                    </div>
-                  </div>
-                ))}
               </div>
 
               <div className="pt-2 border-t border-[#E7E5E0] space-y-2 text-xs text-[#5E5D59]">

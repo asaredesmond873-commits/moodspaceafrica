@@ -286,8 +286,19 @@ export function VideoReelCard({
     }
   };
 
+  const getStoryDeepLink = () => {
+    if (typeof window === 'undefined') return '';
+    return `${window.location.origin}/?story=${encodeURIComponent(video.id)}`;
+  };
+
+  const whatsappShareHref = (() => {
+    const storyUrl = getStoryDeepLink();
+    const message = `Watch "${video.title}" by ${video.authorName} on MoodSpace Africa:\n${storyUrl}`;
+    return `https://wa.me/?text=${encodeURIComponent(message)}`;
+  })();
+
   const handleShare = async () => {
-    const shareUrl = `${window.location.origin}/#video=${video.id}`;
+    const shareUrl = getStoryDeepLink();
     try {
       if (navigator.share) {
         await navigator.share({
@@ -740,8 +751,8 @@ export function VideoReelCard({
         )}
       </div>
 
-      {/* Footer: Free Daily Vote & Storyteller Profile */}
-      <div className="px-4 py-2.5 bg-white border-t border-[#E7E5E0] flex items-center justify-between gap-2 text-xs">
+      {/* Footer: Free Daily Vote, Share to WhatsApp & Storyteller Profile */}
+      <div className="px-4 py-2.5 bg-white border-t border-[#E7E5E0] flex items-center justify-between gap-2 flex-wrap text-xs">
         <button
           type="button"
           onClick={() => void handleVoteClick()}
@@ -758,13 +769,29 @@ export function VideoReelCard({
           </span>
         </button>
 
-        <button
-          type="button"
-          onClick={() => onViewProfile(video.authorId)}
-          className="min-h-[36px] px-3 py-1 rounded-lg border border-[#E7E5E0] bg-[#FAF9F7] hover:border-[#0E7C5B] hover:text-[#0E7C5B] text-[#141413] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
-        >
-          <span>View Profile</span>
-        </button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <a
+            href={whatsappShareHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => {
+              void incrementChallengeVideoShare(video.id);
+            }}
+            aria-label={`Share ${video.title} to WhatsApp`}
+            className="min-h-[36px] px-3 py-1 rounded-lg bg-[#128C7E] hover:bg-[#0E7266] text-white font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
+          >
+            <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+            <span>Share to WhatsApp</span>
+          </a>
+
+          <button
+            type="button"
+            onClick={() => onViewProfile(video.authorId)}
+            className="min-h-[36px] px-3 py-1 rounded-lg border border-[#E7E5E0] bg-[#FAF9F7] hover:border-[#0E7C5B] hover:text-[#0E7C5B] text-[#141413] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
+          >
+            <span>Profile</span>
+          </button>
+        </div>
       </div>
     </article>
   );

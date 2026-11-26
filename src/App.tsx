@@ -84,9 +84,23 @@ class AppErrorBoundary extends Component<
   }
 }
 
+function readInitialDeepLinkStoryId(): string | null {
+  if (typeof window === 'undefined') return null;
+  const fromQuery = new URLSearchParams(window.location.search).get('story')?.trim();
+  if (fromQuery) return fromQuery;
+  const hash = window.location.hash;
+  if (hash.startsWith('#video=')) {
+    return hash.replace('#video=', '').trim() || null;
+  }
+  return null;
+}
+
 function MoodSpaceShell() {
   const { user, profile, signInWithGoogle, authError, setLocalProfile } = useAuth();
   const [activeSection, setActiveSection] = useState<NavSection>('home');
+  const [deepLinkVideoId, setDeepLinkVideoId] = useState<string | null>(() =>
+    readInitialDeepLinkStoryId()
+  );
   const round = useMemo(() => getCurrentChallengeRound(), []);
 
   const [roundVideos, setRoundVideos] = useState<ChallengeVideo[]>([]);
@@ -175,8 +189,35 @@ function MoodSpaceShell() {
     return () => unsubViews();
   }, [user, hasCreatorPass]);
 
+  const latestNotificationMs = useMemo(() => {
+    let maxMs = 0;
+    myFollowers.forEach((f) => {
+      const ms = f.createdAt?.toMillis() ?? 0;
+      if (ms > maxMs) maxMs = ms;
+    });
+    if (hasCreatorPass) {
+      profileViewers.forEach((pv) => {
+        const ms = pv.viewedAt?.toMillis() ?? 0;
+        if (ms > maxMs) maxMs = ms;
+      });
+    }
+    allVideos.forEach((v) => {
+      if (followingIds.has(v.authorId)) {
+        const ms = v.createdAt?.toMillis() ?? 0;
+        if (ms > maxMs) maxMs = ms;
+      }
+    });
+    return maxMs;
+  }, [myFollowers, hasCreatorPass, profileViewers, allVideos, followingIds]);
+
+  useEffect(() => {
+    if (activeSection !== 'notifications') return;
+    const nextMs = markAllNotificationsReadNow(latestNotificationMs);
+    setNotifLastReadMs((prev) => Math.max(prev, nextMs));
+  }, [activeSection, latestNotificationMs]);
+
   const unreadNotificationsCount = useMemo(() => {
-    if (!user) return 0;
+    if (!user || activeSection === 'notifications') return 0;
     let count = 0;
     myFollowers.forEach((f) => {
       if ((f.createdAt?.toMillis() ?? 0) > notifLastReadMs) count += 1;
@@ -192,7 +233,16 @@ function MoodSpaceShell() {
       }
     });
     return count;
-  }, [user, myFollowers, hasCreatorPass, profileViewers, allVideos, followingIds, notifLastReadMs]);
+  }, [
+    user,
+    activeSection,
+    myFollowers,
+    hasCreatorPass,
+    profileViewers,
+    allVideos,
+    followingIds,
+    notifLastReadMs,
+  ]);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -315,6 +365,9 @@ function MoodSpaceShell() {
   };
 
   const handleJumpToStory = (videoId: string) => {
+    if (!roundVideos.some((v) => v.id === videoId)) {
+      setDeepLinkVideoId(videoId);
+    }
     setActiveSection('home');
     window.setTimeout(() => {
       const el = document.getElementById(`video-reel-${videoId}`);
@@ -355,6 +408,10 @@ function MoodSpaceShell() {
         unreadNotificationsCount={unreadNotificationsCount}
         onSelectSection={(sec) => {
           setActiveSection(sec);
+          if (sec === 'notifications') {
+            const nextMs = markAllNotificationsReadNow(latestNotificationMs);
+            setNotifLastReadMs((prev) => Math.max(prev, nextMs));
+          }
           if (sec === 'dashboard') {
             setDashboardInitialTab('overview');
           }
@@ -387,7 +444,10 @@ function MoodSpaceShell() {
               hasCreatorPass={hasCreatorPass}
               onJumpToStory={handleJumpToStory}
               onViewProfile={(uid) => setViewingProfileUid(uid)}
-              onMarkRead={() => setNotifLastReadMs(markAllNotificationsReadNow())}
+              onMarkRead={() => {
+                const nextMs = markAllNotificationsReadNow(latestNotificationMs);
+                setNotifLastReadMs((prev) => Math.max(prev, nextMs));
+              }}
             />
           </Suspense>
         ) : activeSection === 'dashboard' ? (
@@ -441,6 +501,16 @@ function MoodSpaceShell() {
               onViewProfile={(uid) => setViewingProfileUid(uid)}
               onNotify={showToast}
               uploadRequestedNonce={videoUploadNonce}
+              deepLinkVideoId={deepLinkVideoId}
+              onClearDeepLink={() => {
+                setDeepLinkVideoId(null);
+                if (typeof window !== 'undefined') {
+                  const url = new URL(window.location.href);
+                  url.searchParams.delete('story');
+                  if (url.hash.startsWith('#video=')) url.hash = '';
+                  window.history.replaceState({}, '', url.toString());
+                }
+              }}
             />
           </Suspense>
         )}
