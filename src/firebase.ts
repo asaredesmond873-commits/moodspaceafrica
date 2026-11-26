@@ -1,52 +1,12 @@
-import { initializeApp, type FirebaseOptions } from 'firebase/app';
+import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { doc, getDocFromServer, getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
-const apiKey = (
-  import.meta.env.VITE_API_KEY ||
-  import.meta.env.VITE_FIREBASE_API_KEY ||
-  ''
-).trim();
+const app = initializeApp(firebaseConfig);
 
-const firestoreDatabaseId =
-  (
-    import.meta.env.VITE_FIREBASE_DATABASE_ID ||
-    import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID ||
-    ''
-  ).trim() || firebaseConfig.firestoreDatabaseId;
-
-const resolvedFirebaseConfig: FirebaseOptions = {
-  apiKey,
-  authDomain:
-    (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '').trim() ||
-    firebaseConfig.authDomain,
-  projectId:
-    (import.meta.env.VITE_FIREBASE_PROJECT_ID || '').trim() ||
-    firebaseConfig.projectId,
-  storageBucket:
-    (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '').trim() ||
-    firebaseConfig.storageBucket,
-  messagingSenderId:
-    (import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '').trim() ||
-    firebaseConfig.messagingSenderId,
-  appId:
-    (import.meta.env.VITE_FIREBASE_APP_ID || '').trim() ||
-    firebaseConfig.appId,
-};
-
-export const isFirebaseConfigured = Boolean(
-  resolvedFirebaseConfig.apiKey &&
-    resolvedFirebaseConfig.projectId &&
-    resolvedFirebaseConfig.appId
-);
-
-const app = isFirebaseConfigured ? initializeApp(resolvedFirebaseConfig) : null;
-
-export const db = (app
-  ? getFirestore(app, firestoreDatabaseId)
-  : null) as ReturnType<typeof getFirestore>;
-export const auth = (app ? getAuth(app) : null) as ReturnType<typeof getAuth>;
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
@@ -81,17 +41,16 @@ export function handleFirestoreError(
   operationType: OperationType,
   path: string | null
 ): never {
-  const currentUser = auth?.currentUser ?? null;
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
-      userId: currentUser?.uid ?? null,
-      email: currentUser?.email ?? null,
-      emailVerified: currentUser?.emailVerified ?? null,
-      isAnonymous: currentUser?.isAnonymous ?? null,
-      tenantId: currentUser?.tenantId ?? null,
+      userId: auth.currentUser?.uid ?? null,
+      email: auth.currentUser?.email ?? null,
+      emailVerified: auth.currentUser?.emailVerified ?? null,
+      isAnonymous: auth.currentUser?.isAnonymous ?? null,
+      tenantId: auth.currentUser?.tenantId ?? null,
       providerInfo:
-        currentUser?.providerData?.map((provider) => ({
+        auth.currentUser?.providerData?.map((provider) => ({
           providerId: provider.providerId,
           email: provider.email,
         })) || [],
@@ -104,7 +63,6 @@ export function handleFirestoreError(
 }
 
 async function testConnection() {
-  if (!isFirebaseConfigured || !db) return;
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
@@ -114,12 +72,10 @@ async function testConnection() {
   }
 }
 
-if (isFirebaseConfigured) {
-  if (typeof window !== 'undefined') {
-    window.setTimeout(() => {
-      void testConnection();
-    }, 1500);
-  } else {
+if (typeof window !== 'undefined') {
+  window.setTimeout(() => {
     void testConnection();
-  }
+  }, 1500);
+} else {
+  void testConnection();
 }

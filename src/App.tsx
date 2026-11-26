@@ -3,7 +3,6 @@ import { Component, lazy, Suspense, useEffect, useState, type ReactNode } from '
 import { DiscoverFeed } from './components/DiscoverFeed';
 import { TopBar, type NavSection } from './components/TopBar';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { isFirebaseConfigured } from './firebase';
 import {
   subscribeMyFollowingIds,
   subscribePublicPosts,
@@ -398,23 +397,6 @@ function MoodSpaceShell() {
 }
 
 export default function App() {
-  if (!isFirebaseConfigured) {
-    return (
-      <div className="min-h-screen bg-[#FAF9F7] flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-white border border-[#E7E5E0] rounded-2xl p-6 space-y-3 text-center">
-          <h1 className="font-display text-xl font-bold text-[#141413]">
-            Environment Configuration Required
-          </h1>
-          <p className="text-sm text-[#5E5D59] leading-relaxed">
-            Set <code className="font-mono text-xs text-[#141413]">VITE_API_KEY</code> (or{' '}
-            <code className="font-mono text-xs text-[#141413]">VITE_FIREBASE_API_KEY</code>) in
-            your environment variables or Secrets settings, then restart the app.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <AppErrorBoundary>
       <AuthProvider>
