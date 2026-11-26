@@ -434,7 +434,7 @@ export function PaystackCheckoutModal({
               <span>
                 {rates.liveConfigured
                   ? 'Secured by Paystack. Supports Card, Mobile Money, Bank Transfer & USSD.'
-                  : 'Paystack preview mode active — add PAYSTACK_SECRET_KEY in Secrets to enable live charges.'}
+                  : 'Preview mode — add PAYSTACK_SECRET_KEY in AI Studio Settings → Secrets to enable live Paystack payments.'}
               </span>
             </div>
 

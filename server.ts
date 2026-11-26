@@ -8,6 +8,10 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+function getPaystackSecretKey(): string {
+  return (process.env.PAYSTACK_SECRET_KEY || '').trim();
+}
+
 const USD_MONTHLY_PRICE = 10;
 const SUPPORTED_CURRENCIES = ['GHS', 'NGN', 'KES', 'ZAR', 'USD'] as const;
 type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
@@ -92,8 +96,8 @@ async function startServer() {
   app.get('/api/paystack/config', (_req, res) => {
     res.json({
       usdAmount: USD_MONTHLY_PRICE,
-      publicKey: process.env.VITE_PAYSTACK_PUBLIC_KEY || '',
-      liveConfigured: Boolean(process.env.PAYSTACK_SECRET_KEY),
+      publicKey: (process.env.VITE_PAYSTACK_PUBLIC_KEY || '').trim(),
+      liveConfigured: Boolean(getPaystackSecretKey()),
     });
   });
 
@@ -113,7 +117,7 @@ async function startServer() {
       localPrices,
       source,
       fetchedAt,
-      liveConfigured: Boolean(process.env.PAYSTACK_SECRET_KEY),
+      liveConfigured: Boolean(getPaystackSecretKey()),
     });
   });
 
@@ -143,8 +147,8 @@ async function startServer() {
     const { rates } = await getUsdExchangeRates();
     const localAmount = computeLocalMonthlyPrice(currency, rates[currency]);
     const amountSubunits = Math.round(localAmount * 100);
-    const paystackSecret = process.env.PAYSTACK_SECRET_KEY || '';
-    const publicKey = process.env.VITE_PAYSTACK_PUBLIC_KEY || '';
+    const paystackSecret = getPaystackSecretKey();
+    const publicKey = (process.env.VITE_PAYSTACK_PUBLIC_KEY || '').trim();
 
     if (!paystackSecret) {
       const previewRef = `msp_preview_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
@@ -223,7 +227,7 @@ async function startServer() {
       return;
     }
 
-    const paystackSecret = process.env.PAYSTACK_SECRET_KEY || '';
+    const paystackSecret = getPaystackSecretKey();
     if (!paystackSecret) {
       if (!reference.startsWith('msp_preview_')) {
         res.status(400).json({ error: 'Invalid preview transaction reference.' });
