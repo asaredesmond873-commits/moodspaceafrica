@@ -530,7 +530,7 @@ export async function toggleSavedVideo(
   }
 }
 
-// --- Single $10/month Paystack Creator Pass Subscription ---
+// --- Single $1/week Paystack Creator Pass Subscription ---
 
 export function subscribeMySubscriptions(
   uid: string,
@@ -577,6 +577,7 @@ export async function activateCreatorPassSubscription(input: {
     if (existing.exists()) {
       batch.update(ref, {
         status: 'active',
+        usdAmount: SUBSCRIPTION_PLANS.USD_WEEKLY,
         currency: input.currency,
         localAmount: input.localAmount,
         country: cleanCountry,
@@ -592,7 +593,7 @@ export async function activateCreatorPassSubscription(input: {
         targetId: SUBSCRIPTION_PLANS.PLAN_ID,
         targetName: SUBSCRIPTION_PLANS.PLAN_NAME,
         planType: 'creator_pass',
-        usdAmount: SUBSCRIPTION_PLANS.USD_MONTHLY,
+        usdAmount: SUBSCRIPTION_PLANS.USD_WEEKLY,
         currency: input.currency,
         localAmount: input.localAmount,
         country: cleanCountry,

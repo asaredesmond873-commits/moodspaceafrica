@@ -413,7 +413,7 @@ service cloud.firestore {
         && isValidId(data.targetId) && data.targetId == 'moodspace_pass'
         && data.targetName is string && data.targetName.size() >= 1 && data.targetName.size() <= 80
         && data.planType == 'creator_pass'
-        && data.usdAmount is int && data.usdAmount == 10
+        && data.usdAmount is int && data.usdAmount == 1
         && data.currency in ['GHS', 'NGN', 'KES', 'ZAR', 'USD']
         && data.localAmount is number && data.localAmount > 0
         && data.country is string && data.country.size() >= 2 && data.country.size() <= 80
@@ -1040,12 +1040,11 @@ service cloud.firestore {
         && incoming().subscriberId == existing().subscriberId
         && incoming().targetId == existing().targetId
         && incoming().planType == existing().planType
-        && incoming().usdAmount == existing().usdAmount
         && incoming().paymentProvider == existing().paymentProvider
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly([
-          'status', 'currency', 'localAmount', 'country', 'paystackReference', 'expiresAt', 'updatedAt'
+          'status', 'usdAmount', 'currency', 'localAmount', 'country', 'paystackReference', 'expiresAt', 'updatedAt'
         ]);
       allow delete: if isVerified()
         && isValidId(subId)

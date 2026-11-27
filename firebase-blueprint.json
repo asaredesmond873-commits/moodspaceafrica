@@ -682,7 +682,7 @@
     },
     "CreatorSubscription": {
       "title": "CreatorSubscription",
-      "description": "Single $10/month Paystack Creator Pass membership supporting Pan-African currency auto-conversion (GHS, NGN, KES, ZAR, USD).",
+      "description": "Single $1/week Paystack Creator Pass membership supporting Pan-African currency auto-conversion (GHS, NGN, KES, ZAR, USD).",
       "type": "object",
       "properties": {
         "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
@@ -750,7 +750,7 @@
     },
     "/publicProfiles/{userId}/profileViews/{viewerId}": {
       "schema": { "$ref": "#/entities/ProfileView" },
-      "description": "Profile views readable exclusively by the profile owner with an active $10/month Creator Pass."
+      "description": "Profile views readable exclusively by the profile owner with an active $1/week Creator Pass."
     },
     "/userPrivate/{userId}": {
       "schema": { "$ref": "#/entities/UserPrivate" },
@@ -818,7 +818,7 @@
     },
     "/creatorSubscriptions/{subId}": {
       "schema": { "$ref": "#/entities/CreatorSubscription" },
-      "description": "Single $10/month Paystack Creator Pass subscriptions."
+      "description": "Single $1/week Paystack Creator Pass subscriptions."
     }
   }
 }

@@ -210,6 +210,7 @@ export function VideosArenaView({
       if (!q) return true;
       return (
         v.title.toLowerCase().includes(q) ||
+        (v.caption || '').toLowerCase().includes(q) ||
         v.authorName.toLowerCase().includes(q) ||
         v.authorLocation.toLowerCase().includes(q)
       );
@@ -385,7 +386,7 @@ export function VideosArenaView({
     }
   };
 
-  const hasActiveFilter = selectedRegion !== 'All Africa' || searchQuery.trim().length > 0 || feedSort !== 'trending';
+  const hasActiveFilter = selectedRegion !== 'All Africa' || feedSort !== 'trending';
 
   return (
     <div className="min-h-screen bg-[#FAF9F7] text-[#141413]">
@@ -393,6 +394,37 @@ export function VideosArenaView({
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           {/* Primary Column: Clean TikTok-Style Feed */}
           <div className="lg:col-span-7 space-y-4">
+            {/* Top Search Bar: Search by creator name or description keyword */}
+            <div className="max-w-[440px] mx-auto">
+              <div className="relative">
+                <Search className="w-4 h-4 text-[#5E5D59] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search by creator name or description keyword..."
+                  aria-label="Search stories by creator name or description keyword"
+                  className="w-full min-h-[44px] pl-10 pr-9 py-2 bg-white border border-[#E7E5E0] rounded-xl text-sm text-[#141413] placeholder-[#9E9A93] shadow-2xs focus:outline-none focus:border-[#0E7C5B]"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    aria-label="Clear search"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-lg text-[#5E5D59] hover:text-[#141413] hover:bg-[#FAF9F7] cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              {searchQuery.trim() && !videosLoading && (
+                <p className="mt-1.5 px-1 text-[11px] text-[#5E5D59]">
+                  {filteredVideos.length}{' '}
+                  {filteredVideos.length === 1 ? 'story matches' : 'stories match'} &ldquo;{searchQuery.trim()}&rdquo;
+                </p>
+              )}
+            </div>
+
             {mode === 'following' ? (
               /* Friendly Following / Friends Header + Discover Creators */
               <div className="max-w-[440px] mx-auto space-y-4">
@@ -567,27 +599,6 @@ export function VideosArenaView({
                 {/* Expandable Compact Filter Drawer (Hidden by Default) */}
                 {showFilters && (
                   <div className="bg-white border border-[#E7E5E0] rounded-2xl p-3.5 space-y-3">
-                    <div className="relative">
-                      <Search className="w-4 h-4 text-[#5E5D59] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      <input
-                        type="search"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Search stories, creators, or cities..."
-                        aria-label="Search African stories"
-                        className="w-full min-h-[40px] pl-9 pr-8 py-1.5 bg-[#FAF9F7] border border-[#E7E5E0] rounded-xl text-sm text-[#141413] placeholder-[#9E9A93] focus:outline-none focus:border-[#0E7C5B]"
-                      />
-                      {searchQuery && (
-                        <button
-                          type="button"
-                          onClick={() => setSearchQuery('')}
-                          aria-label="Clear search"
-                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[#5E5D59] hover:text-[#141413] cursor-pointer"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
 
                     <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
                       {AFRICAN_REGIONS.map((region) => {
@@ -802,7 +813,7 @@ export function VideosArenaView({
                     onClick={onOpenSubscribe}
                     className="flex-1 min-h-[38px] px-3 py-1.5 rounded-xl bg-[#0E7C5B] text-white text-xs font-semibold hover:bg-[#095E44] cursor-pointer"
                   >
-                    Subscribe ($10/mo)
+                    Subscribe ($1/wk)
                   </button>
                 )}
               </div>

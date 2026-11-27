@@ -266,9 +266,9 @@ export interface ProfileViewRecord {
 export const SUBSCRIPTION_PLANS = {
   PLAN_ID: 'moodspace_pass',
   PLAN_NAME: 'MoodSpace Creator Pass',
-  USD_MONTHLY: 10,
-  DURATION_DAYS: 30,
-  DURATION_MS: 30 * 24 * 60 * 60 * 1000,
+  USD_WEEKLY: 1,
+  DURATION_DAYS: 7,
+  DURATION_MS: 7 * 24 * 60 * 60 * 1000,
 } as const;
 
 export interface ChallengeVideo {

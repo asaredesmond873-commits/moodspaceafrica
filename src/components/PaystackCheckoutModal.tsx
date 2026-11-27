@@ -39,11 +39,11 @@ interface RatesPayload {
 }
 
 const DEFAULT_LOCAL_PRICES: Record<PaystackCurrency, number> = {
-  GHS: 155,
-  NGN: 16000,
-  KES: 1300,
-  ZAR: 185,
-  USD: 10,
+  GHS: 15.5,
+  NGN: 1600,
+  KES: 130,
+  ZAR: 18.5,
+  USD: 1,
 };
 
 interface PaystackPopInstance {
@@ -88,7 +88,7 @@ export function PaystackCheckoutModal({
     detectPaystackCountryFromLocation(profile?.location || '')
   );
   const [rates, setRates] = useState<RatesPayload>({
-    usdAmount: SUBSCRIPTION_PLANS.USD_MONTHLY,
+    usdAmount: SUBSCRIPTION_PLANS.USD_WEEKLY,
     localPrices: DEFAULT_LOCAL_PRICES,
     source: 'fallback',
     liveConfigured: false,
@@ -275,7 +275,7 @@ export function PaystackCheckoutModal({
               Subscribe · MoodSpace Creator Pass
             </h2>
             <p className="text-xs text-[#5E5D59]">
-              $10 / month · Powered by Paystack across Africa
+              $1 / week · Powered by Paystack across Africa
             </p>
           </div>
           <button
@@ -352,9 +352,9 @@ export function PaystackCheckoutModal({
             <div className="bg-[#FAF9F7] border border-[#E7E5E0] rounded-xl p-4 space-y-3">
               <div className="flex items-baseline justify-between gap-3">
                 <div>
-                  <p className="text-xs font-semibold text-[#0E7C5B]">Monthly Membership</p>
+                  <p className="text-xs font-semibold text-[#0E7C5B]">Weekly Membership</p>
                   <p className="font-display text-lg font-bold text-[#141413]">
-                    $10 USD / month
+                    $1 USD / week
                   </p>
                 </div>
                 <div className="text-right">
@@ -404,7 +404,7 @@ export function PaystackCheckoutModal({
                 </select>
               </div>
               <p className="text-[11px] text-[#5E5D59]">
-                Auto-converts $10 USD to Ghana (GHS), Nigeria (NGN), Kenya (KES), South Africa (ZAR), or USD across Africa.
+                Auto-converts $1 USD to Ghana (GHS), Nigeria (NGN), Kenya (KES), South Africa (ZAR), or USD across Africa.
               </p>
             </div>
 
@@ -456,7 +456,7 @@ export function PaystackCheckoutModal({
                 <span>
                   {submitting
                     ? 'Connecting Paystack...'
-                    : `Subscribe · ${formattedLocalPrice}/mo`}
+                    : `Subscribe · ${formattedLocalPrice}/wk`}
                 </span>
               </button>
             </div>

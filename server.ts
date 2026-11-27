@@ -12,7 +12,7 @@ function getPaystackSecretKey(): string {
   return (process.env.PAYSTACK_SECRET_KEY || '').trim();
 }
 
-const USD_MONTHLY_PRICE = 10;
+const USD_WEEKLY_PRICE = 1;
 const SUPPORTED_CURRENCIES = ['GHS', 'NGN', 'KES', 'ZAR', 'USD'] as const;
 type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
 
@@ -77,8 +77,8 @@ async function getUsdExchangeRates(): Promise<{
   return cachedRates;
 }
 
-function computeLocalMonthlyPrice(currency: SupportedCurrency, rate: number): number {
-  const raw = USD_MONTHLY_PRICE * rate;
+function computeLocalWeeklyPrice(currency: SupportedCurrency, rate: number): number {
+  const raw = USD_WEEKLY_PRICE * rate;
   if (currency === 'NGN' || currency === 'KES') {
     return Math.round(raw);
   }
@@ -95,7 +95,7 @@ async function startServer() {
 
   app.get('/api/paystack/config', (_req, res) => {
     res.json({
-      usdAmount: USD_MONTHLY_PRICE,
+      usdAmount: USD_WEEKLY_PRICE,
       publicKey: (process.env.VITE_PAYSTACK_PUBLIC_KEY || '').trim(),
       liveConfigured: Boolean(getPaystackSecretKey()),
     });
@@ -104,15 +104,15 @@ async function startServer() {
   app.get('/api/paystack/rates', async (_req, res) => {
     const { rates, source, fetchedAt } = await getUsdExchangeRates();
     const localPrices: Record<SupportedCurrency, number> = {
-      GHS: computeLocalMonthlyPrice('GHS', rates.GHS),
-      NGN: computeLocalMonthlyPrice('NGN', rates.NGN),
-      KES: computeLocalMonthlyPrice('KES', rates.KES),
-      ZAR: computeLocalMonthlyPrice('ZAR', rates.ZAR),
-      USD: USD_MONTHLY_PRICE,
+      GHS: computeLocalWeeklyPrice('GHS', rates.GHS),
+      NGN: computeLocalWeeklyPrice('NGN', rates.NGN),
+      KES: computeLocalWeeklyPrice('KES', rates.KES),
+      ZAR: computeLocalWeeklyPrice('ZAR', rates.ZAR),
+      USD: USD_WEEKLY_PRICE,
     };
 
     res.json({
-      usdAmount: USD_MONTHLY_PRICE,
+      usdAmount: USD_WEEKLY_PRICE,
       rates,
       localPrices,
       source,
@@ -145,7 +145,7 @@ async function startServer() {
 
     const currency = body.currency;
     const { rates } = await getUsdExchangeRates();
-    const localAmount = computeLocalMonthlyPrice(currency, rates[currency]);
+    const localAmount = computeLocalWeeklyPrice(currency, rates[currency]);
     const amountSubunits = Math.round(localAmount * 100);
     const paystackSecret = getPaystackSecretKey();
     const publicKey = (process.env.VITE_PAYSTACK_PUBLIC_KEY || '').trim();
@@ -157,7 +157,7 @@ async function startServer() {
         reference: previewRef,
         currency,
         localAmount,
-        usdAmount: USD_MONTHLY_PRICE,
+        usdAmount: USD_WEEKLY_PRICE,
         publicKey,
       });
       return;
@@ -181,7 +181,8 @@ async function startServer() {
             uid,
             country,
             plan: 'creator_pass',
-            usdAmount: USD_MONTHLY_PRICE,
+            interval: 'weekly',
+            usdAmount: USD_WEEKLY_PRICE,
           },
         }),
       });
@@ -210,7 +211,7 @@ async function startServer() {
         authorizationUrl: payload.data.authorization_url || '',
         currency,
         localAmount,
-        usdAmount: USD_MONTHLY_PRICE,
+        usdAmount: USD_WEEKLY_PRICE,
         publicKey,
       });
     } catch {

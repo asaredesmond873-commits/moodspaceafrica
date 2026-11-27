@@ -92,7 +92,7 @@ export function VideoUploadModal({
     setError(null);
 
     if (!hasCreatorPass) {
-      setError('An active $10/month Creator Pass is required to upload a story and enter to win the prize.');
+      setError('An active $1/week Creator Pass is required to upload a story and enter to win the prize.');
       return;
     }
 
@@ -191,7 +191,7 @@ export function VideoUploadModal({
                     Subscribe to Post &amp; Enter to Win
                   </h3>
                   <p className="text-xs text-[#5E5D59] leading-relaxed">
-                    Free members can watch, like, comment, follow, and vote. Only subscribed Creator Pass members ($10/month via Paystack) can post a story to compete for the prize.
+                    Free members can watch, like, comment, follow, and vote. Only subscribed Creator Pass members ($1/week via Paystack) can post a story to compete for the prize.
                   </p>
                 </div>
               </div>
@@ -227,7 +227,7 @@ export function VideoUploadModal({
                   }}
                   className="flex-[1.5] min-h-[44px] px-4 py-2.5 text-sm font-semibold text-white bg-[#0E7C5B] rounded-xl hover:bg-[#095E44] cursor-pointer"
                 >
-                  Subscribe · $10/mo
+                  Subscribe · $1/wk
                 </button>
               </div>
             </div>

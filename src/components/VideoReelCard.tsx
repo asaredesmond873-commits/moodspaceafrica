@@ -3,6 +3,8 @@ import {
   BadgeCheck,
   Bookmark,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Heart,
   MapPin,
   MessageCircle,
@@ -16,7 +18,6 @@ import {
   Volume2,
   VolumeX,
   Wifi,
-  X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -94,10 +95,14 @@ export function VideoReelCard({
   const [likeBusy, setLikeBusy] = useState(false);
   const [voteBusy, setVoteBusy] = useState(false);
 
+  const commentsSectionRef = useRef<HTMLElement | null>(null);
+  const commentInputRef = useRef<HTMLInputElement | null>(null);
   const [commentsOpen, setCommentsOpen] = useState(false);
+  const [commentsLoaded, setCommentsLoaded] = useState(false);
   const [comments, setComments] = useState<ChallengeVideoComment[]>([]);
   const [commentText, setCommentText] = useState('');
   const [commentBusy, setCommentBusy] = useState(false);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [deletingVideo, setDeletingVideo] = useState(false);
 
   const badge = verifiedBadges[video.authorId];
@@ -228,9 +233,27 @@ export function VideoReelCard({
 
   useEffect(() => {
     if (!commentsOpen) return;
-    const unsub = subscribeChallengeVideoComments(video.id, setComments, () => {});
+    setCommentsLoaded(false);
+    const unsub = subscribeChallengeVideoComments(
+      video.id,
+      (list) => {
+        setComments(list);
+        setCommentsLoaded(true);
+      },
+      () => {
+        setCommentsLoaded(true);
+      }
+    );
     return () => unsub();
   }, [commentsOpen, video.id]);
+
+  const handleOpenAndFocusComments = () => {
+    setCommentsOpen(true);
+    window.setTimeout(() => {
+      commentsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      commentInputRef.current?.focus();
+    }, 60);
+  };
 
   const handleTogglePlay = () => {
     if (dataSaver && !videoSrc) {
@@ -337,10 +360,15 @@ export function VideoReelCard({
   };
 
   const handleDeleteComment = async (commentId: string) => {
+    if (deletingCommentId) return;
+    setDeletingCommentId(commentId);
     try {
       await deleteChallengeVideoComment(video.id, commentId);
+      onNotify('Comment deleted.');
     } catch {
       onNotify('Could not delete comment.');
+    } finally {
+      setDeletingCommentId(null);
     }
   };
 
@@ -604,11 +632,16 @@ export function VideoReelCard({
 
           <button
             type="button"
-            onClick={() => setCommentsOpen(true)}
-            aria-label="Open comments"
+            onClick={handleOpenAndFocusComments}
+            aria-label={`View comments (${video.commentsCount})`}
+            aria-expanded={commentsOpen}
             className="min-w-[44px] min-h-[44px] flex flex-col items-center justify-center gap-0.5 cursor-pointer"
           >
-            <div className="w-11 h-11 rounded-full bg-black/50 backdrop-blur-xs text-white flex items-center justify-center">
+            <div
+              className={`w-11 h-11 rounded-full backdrop-blur-xs flex items-center justify-center ${
+                commentsOpen ? 'bg-[#0E7C5B] text-white' : 'bg-black/50 text-white'
+              }`}
+            >
               <MessageCircle className="w-5 h-5" />
             </div>
             <span className="text-[11px] font-semibold text-white tabular-nums drop-shadow">
@@ -655,100 +688,6 @@ export function VideoReelCard({
             </span>
           </button>
         </div>
-
-        {/* Comments Drawer */}
-        {commentsOpen && (
-          <div className="absolute inset-0 z-40 bg-black/45 flex flex-col justify-end">
-            <div className="bg-white border-t border-[#E7E5E0] rounded-t-2xl max-h-[75%] flex flex-col text-[#141413]">
-              <div className="px-4 py-3 border-b border-[#E7E5E0] flex items-center justify-between">
-                <span className="text-xs font-bold text-[#141413]">
-                  Comments ({video.commentsCount})
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setCommentsOpen(false)}
-                  aria-label="Close comments"
-                  className="w-10 h-10 flex items-center justify-center rounded-lg text-[#5E5D59] hover:text-[#141413] cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-3.5 space-y-3">
-                {comments.length === 0 ? (
-                  <p className="text-xs text-[#5E5D59] text-center py-6">
-                    Be the first to comment on {video.authorName}'s story.
-                  </p>
-                ) : (
-                  comments.map((c) => {
-                    const canDeleteComment =
-                      Boolean(user) &&
-                      (user?.uid === c.authorId || user?.uid === video.authorId);
-                    return (
-                      <div key={c.id} className="flex items-start gap-2.5 text-xs">
-                        {c.authorAvatar ? (
-                          <img
-                            src={c.authorAvatar}
-                            alt={c.authorName}
-                            referrerPolicy="no-referrer"
-                            className="w-7 h-7 rounded-full object-cover shrink-0 mt-0.5"
-                          />
-                        ) : (
-                          <div className="w-7 h-7 rounded-full bg-[#0E7C5B] text-white font-bold flex items-center justify-center shrink-0 mt-0.5">
-                            {c.authorName.charAt(0).toUpperCase()}
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-bold text-[#141413] truncate">
-                              {c.authorName}
-                            </span>
-                            <span className="text-[10px] text-[#5E5D59] shrink-0">
-                              {formatTimestamp(c.createdAt)}
-                            </span>
-                          </div>
-                          <p className="text-[#3F3E3B] break-words mt-0.5">{c.text}</p>
-                        </div>
-                        {canDeleteComment && (
-                          <button
-                            type="button"
-                            onClick={() => void handleDeleteComment(c.id)}
-                            aria-label="Delete comment"
-                            className="p-1.5 text-[#5E5D59] hover:text-[#B91C1C] cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              <form
-                onSubmit={(e) => void handleAddComment(e)}
-                className="p-3 border-t border-[#E7E5E0] flex items-center gap-2 bg-[#FAF9F7]"
-              >
-                <input
-                  type="text"
-                  maxLength={CHALLENGE_LIMITS.COMMENT_MAX}
-                  placeholder={user ? 'Write a comment...' : 'Sign in to comment...'}
-                  value={commentText}
-                  onChange={(e) => setCommentText(e.target.value)}
-                  className="flex-1 min-w-0 min-h-[44px] px-3 py-2 bg-white border border-[#E7E5E0] rounded-xl text-base sm:text-xs text-[#141413] placeholder-[#9E9A93] focus:outline-none focus:border-[#0E7C5B]"
-                />
-                <button
-                  type="submit"
-                  disabled={commentBusy || !commentText.trim()}
-                  aria-label="Send comment"
-                  className="w-11 h-11 rounded-xl bg-[#0E7C5B] text-white flex items-center justify-center disabled:opacity-50 cursor-pointer shrink-0"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
-              </form>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Footer: Free Daily Vote, Share to WhatsApp & Storyteller Profile */}
@@ -793,6 +732,128 @@ export function VideoReelCard({
           </button>
         </div>
       </div>
+
+      {/* Inline Comments Section (Firestore-backed per video ID) */}
+      <section
+        ref={commentsSectionRef}
+        aria-label={`Comments for ${video.title}`}
+        className="border-t border-[#E7E5E0] bg-[#FAF9F7]"
+      >
+        <button
+          type="button"
+          onClick={() => setCommentsOpen((prev) => !prev)}
+          aria-expanded={commentsOpen}
+          className="w-full px-4 py-2.5 flex items-center justify-between text-xs font-semibold text-[#141413] hover:bg-[#F2F0EC] transition-colors cursor-pointer"
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <MessageCircle className="w-3.5 h-3.5 text-[#0E7C5B]" />
+            <span>Comments ({video.commentsCount})</span>
+          </span>
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#5E5D59]">
+            <span>{commentsOpen ? 'Hide' : video.commentsCount > 0 ? 'Read & reply' : 'Add comment'}</span>
+            {commentsOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </span>
+        </button>
+
+        {commentsOpen && (
+          <div className="border-t border-[#E7E5E0] bg-white">
+            <div className="max-h-64 overflow-y-auto px-4 py-3 space-y-3">
+              {!commentsLoaded ? (
+                <p className="text-xs text-[#5E5D59] text-center py-4">Loading comments...</p>
+              ) : comments.length === 0 ? (
+                <p className="text-xs text-[#5E5D59] text-center py-4">
+                  No comments yet. Be the first to comment on {video.authorName}&apos;s story.
+                </p>
+              ) : (
+                comments.map((c) => {
+                  const isCommentAuthor = Boolean(user && user.uid === c.authorId);
+                  const canDeleteComment =
+                    Boolean(user) && (isCommentAuthor || user?.uid === video.authorId);
+                  const isDeletingThis = deletingCommentId === c.id;
+                  return (
+                    <div key={c.id} className="flex items-start gap-2.5 text-xs">
+                      {c.authorAvatar ? (
+                        <img
+                          src={c.authorAvatar}
+                          alt={c.authorName}
+                          referrerPolicy="no-referrer"
+                          className="w-7 h-7 rounded-full object-cover shrink-0 mt-0.5 border border-[#E7E5E0]"
+                        />
+                      ) : (
+                        <div className="w-7 h-7 rounded-full bg-[#0E7C5B] text-white font-bold flex items-center justify-center shrink-0 mt-0.5">
+                          {c.authorName.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-[#141413] truncate">
+                            {c.authorName}
+                          </span>
+                          <span className="text-[10px] text-[#5E5D59] shrink-0">
+                            {formatTimestamp(c.createdAt)}
+                          </span>
+                        </div>
+                        <p className="text-[#3F3E3B] break-words mt-0.5">{c.text}</p>
+                      </div>
+                      {canDeleteComment && (
+                        <button
+                          type="button"
+                          disabled={isDeletingThis}
+                          onClick={() => void handleDeleteComment(c.id)}
+                          aria-label="Delete comment"
+                          title={isCommentAuthor ? 'Delete your comment' : 'Remove comment'}
+                          className="p-1.5 rounded-lg text-[#5E5D59] hover:text-[#B91C1C] hover:bg-[#FEF2F2] disabled:opacity-50 cursor-pointer shrink-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {user ? (
+              <form
+                onSubmit={(e) => void handleAddComment(e)}
+                className="p-3 border-t border-[#E7E5E0] flex items-center gap-2 bg-[#FAF9F7]"
+              >
+                <input
+                  ref={commentInputRef}
+                  type="text"
+                  maxLength={CHALLENGE_LIMITS.COMMENT_MAX}
+                  placeholder="Write a comment..."
+                  aria-label="Write a comment"
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  disabled={commentBusy}
+                  className="flex-1 min-w-0 min-h-[40px] px-3 py-2 bg-white border border-[#E7E5E0] rounded-xl text-sm sm:text-xs text-[#141413] placeholder-[#9E9A93] focus:outline-none focus:border-[#0E7C5B]"
+                />
+                <button
+                  type="submit"
+                  disabled={commentBusy || !commentText.trim()}
+                  aria-label="Post comment"
+                  className="min-h-[40px] px-3.5 rounded-xl bg-[#0E7C5B] hover:bg-[#095E44] text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer shrink-0"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{commentBusy ? 'Posting...' : 'Post'}</span>
+                </button>
+              </form>
+            ) : (
+              <div className="p-3 border-t border-[#E7E5E0] bg-[#FAF9F7] flex items-center justify-between gap-2">
+                <span className="text-xs text-[#5E5D59]">Sign in to post a comment.</span>
+                <button
+                  type="button"
+                  onClick={() => void signInWithGoogle()}
+                  className="min-h-[36px] px-3.5 py-1.5 rounded-xl bg-[#0E7C5B] hover:bg-[#095E44] text-white text-xs font-semibold cursor-pointer shrink-0"
+                >
+                  Sign In
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
     </article>
   );
 }

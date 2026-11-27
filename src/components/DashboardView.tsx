@@ -415,7 +415,7 @@ export function DashboardView({
             Sign in to your Creator Studio
           </h1>
           <p className="text-sm text-[#5E5D59]">
-            Watch African video stories, track votes and leaderboard standings, manage your $10/month Creator Pass, and see who viewed your profile.
+            Watch African video stories, track votes and leaderboard standings, manage your $1/week Creator Pass, and see who viewed your profile.
           </p>
           <button
             type="button"
@@ -965,7 +965,7 @@ export function DashboardView({
               <div className="flex items-center gap-2">
                 <BadgeCheck className="w-5 h-5 text-[#0E7C5B]" />
                 <h2 className="font-display text-base font-bold text-[#141413]">
-                  MoodSpace Creator Pass · $10 / month
+                  MoodSpace Creator Pass · $1 / week
                 </h2>
               </div>
               {hasCreatorPass && activePass ? (
@@ -1033,7 +1033,7 @@ export function DashboardView({
               <div className="py-8 text-center space-y-3">
                 <Lock className="w-7 h-7 text-[#5E5D59] mx-auto" />
                 <p className="text-xs text-[#5E5D59] max-w-sm mx-auto">
-                  Subscribe to the $10/month Creator Pass to see everyone who viewed your profile, enter story rounds to win prizes, and carry a Verified Creator badge.
+                  Subscribe to the $1/week Creator Pass to see everyone who viewed your profile, enter story rounds to win prizes, and carry a Verified Creator badge.
                 </p>
                 <button
                   type="button"

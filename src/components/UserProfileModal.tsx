@@ -577,7 +577,7 @@ export function UserProfileModal({
                     See Who Viewed Your Profile
                   </h3>
                   <p className="text-xs text-[#5E5D59] max-w-sm mx-auto">
-                    Subscribe to the $10/month Creator Pass via Paystack to unlock who visited your profile, post stories to enter prize rounds, and get a Verified badge.
+                    Subscribe to the $1/week Creator Pass via Paystack to unlock who visited your profile, post stories to enter prize rounds, and get a Verified badge.
                   </p>
                   <button
                     type="button"
